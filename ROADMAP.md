@@ -6,7 +6,7 @@
 
 ### Features
 
-- [ ] `pre_tool_use.sh` — PreToolUse hook that intercepts git write operations on main branch
+- [x] `pre_tool_use.sh` — PreToolUse hook that intercepts git write operations on main branch
   - Detects `git commit` on main or master
   - Detects `git push origin main` / `git push origin master` / bare `git push` when on main
   - Detects `git merge` into main (without PR)
@@ -16,20 +16,20 @@
   - Fast-path grep before any subprocess calls (no overhead on non-git commands)
   - Override via `GITHABITS_ALLOW_MAIN=1` env var (documented in README only)
 
-- [ ] `CLAUDE.md` template — Three injected rules for Claude's behavior
+- [x] `CLAUDE.md` template — Three injected rules for Claude's behavior
   - Explain every git command in plain English before executing it
   - Check current branch before committing; ask user to name a feature branch if on main
   - One-sentence git history summary after every successful push
   - Wrapped in `# GitHabits START` / `# GitHabits END` delimiters for clean uninstall
 
-- [ ] `setup.sh` — One-command installation script
+- [x] `setup.sh` — One-command installation script
   - Global install to `~/.claude/` by default; `--project` flag for per-project install
   - Idempotent: re-running never creates duplicate hook entries or CLAUDE.md blocks
   - Merges hook entry into `settings.json` using python3 (no jq dependency)
   - `--uninstall` flag removes all traces cleanly
   - Claude Code version check (minimum version with JSON+exit2 fix)
 
-- [ ] `README.md` — Setup, configuration, and uninstall documentation
+- [x] `README.md` — Setup, configuration, and uninstall documentation
   - Install command (`curl | bash`)
   - `GITHABITS_ALLOW_MAIN=1` override documentation (for solo repos)
   - Uninstall instructions
