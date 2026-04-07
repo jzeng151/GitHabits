@@ -34,18 +34,32 @@ Claude explains what it's doing in plain English before every git command, block
 
 ## Install
 
-**Global install** (applies to every project):
+### Option A — Paste into Claude Code (no terminal needed)
 
-```bash
-git clone https://github.com/jzeng151/GitHabits.git
-cd GitHabits
-./setup.sh
+Copy and paste this into any Claude Code chat:
+
+```
+Please install GitHabits for me by running these steps:
+
+1. Ask me: "Do you want GitHabits installed globally (works in every project) or just for this project?"
+2. Clone the repo into a temp directory: git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+3. Based on my answer:
+   - Global: bash /tmp/githabits/setup.sh
+   - This project only: bash /tmp/githabits/setup.sh --project
+4. Delete the installer: rm -rf /tmp/githabits
+
+Start with step 1 — ask me the question before running anything.
 ```
 
-**Per-project install** (this project only):
+Claude will ask you global vs. project, run the installer, and clean up after itself.
+
+### Option B — Terminal
 
 ```bash
-./setup.sh --project
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh        # global
+# or: bash /tmp/githabits/setup.sh --project
+rm -rf /tmp/githabits
 ```
 
 That's it. Open any project in Claude Code and start working.
@@ -93,9 +107,26 @@ Or set it permanently in your shell environment. This completely bypasses the ho
 
 ## Uninstall
 
+Paste into Claude Code:
+
+```
+Please uninstall GitHabits by running these steps:
+
+1. Ask me: "Did you install GitHabits globally or just for this project?"
+2. Clone the repo: git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+3. Based on my answer:
+   - Global: bash /tmp/githabits/setup.sh --uninstall
+   - This project only: bash /tmp/githabits/setup.sh --project --uninstall
+4. Delete the installer: rm -rf /tmp/githabits
+```
+
+Or from a terminal:
+
 ```bash
-./setup.sh --uninstall          # global uninstall
-./setup.sh --project --uninstall  # project-only uninstall
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --uninstall        # global
+# or: bash /tmp/githabits/setup.sh --project --uninstall
+rm -rf /tmp/githabits
 ```
 
 This removes the hook script, unregisters it from `settings.json`, and removes the GitHabits block from `CLAUDE.md`. Clean removal, nothing left behind.
