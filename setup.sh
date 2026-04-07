@@ -166,7 +166,7 @@ PYEOF
   success "Created: $SETTINGS_FILE"
 else
   # Merge into existing settings.json (idempotent)
-  python3 - "$SETTINGS_FILE" "$HOOK_DEST" <<'PYEOF'
+  RESULT=$(python3 - "$SETTINGS_FILE" "$HOOK_DEST" <<'PYEOF'
 import json, sys
 path, hook_cmd = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -197,17 +197,6 @@ with open(path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
 print("registered")
-PYEOF
-  RESULT=$(python3 - "$SETTINGS_FILE" "$HOOK_DEST" <<'PYEOF'
-import json, sys
-path, hook_cmd = sys.argv[1], sys.argv[2]
-with open(path) as f:
-    cfg = json.load(f)
-for entry in cfg.get("hooks", {}).get("PreToolUse", []):
-    for h in entry.get("hooks", []):
-        if h.get("command") == hook_cmd:
-            print("already_registered"); sys.exit(0)
-print("not_registered")
 PYEOF
   )
   if [ "$RESULT" = "already_registered" ]; then
