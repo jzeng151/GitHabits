@@ -9,6 +9,56 @@
 
 set -euo pipefail
 
+# ── Check Claude Code version ─────────────────────────────────────────────────
+MIN_CLAUDE_VERSION="2.1.91"
+
+check_claude_version() {
+  if ! command -v claude >/dev/null 2>&1; then
+    error "Claude Code is not installed."
+    error "Install it from: https://claude.ai/code"
+    exit 1
+  fi
+
+  local version
+  version=$(claude --version 2>/dev/null | cut -d' ' -f1)
+
+  if [ -z "$version" ]; then
+    warn "Could not determine Claude Code version — skipping version check."
+    return
+  fi
+
+  # sort -V: version-aware sort; if min sorts first, installed >= min
+  local lower
+  lower=$(printf '%s\n%s' "$MIN_CLAUDE_VERSION" "$version" | sort -V | head -n1)
+
+  if [ "$lower" != "$MIN_CLAUDE_VERSION" ]; then
+    echo ""
+    error "GitHabits requires Claude Code v${MIN_CLAUDE_VERSION} or later."
+    error "Your version: $version"
+    echo ""
+    echo "  The PreToolUse hook JSON+exit2 fix landed in v${MIN_CLAUDE_VERSION} (April 2, 2026)."
+    echo "  On older versions the hook fires but the block doesn't work."
+    echo ""
+    echo "  To upgrade:  claude upgrade"
+    echo ""
+    printf "  Upgrade now and re-run, or continue anyway? [u=upgrade / c=continue]: "
+    read -r REPLY
+    case "$REPLY" in
+      u|U)
+        echo ""
+        info "Running: claude upgrade"
+        claude upgrade
+        echo ""
+        info "Re-run ./setup.sh after upgrade completes."
+        exit 0
+        ;;
+      *)
+        warn "Continuing with unsupported version — hook may not work correctly."
+        ;;
+    esac
+  fi
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SRC="$SCRIPT_DIR/hooks/pre_tool_use.sh"
 CLAUDE_MD_SRC="$SCRIPT_DIR/templates/CLAUDE.md"
@@ -133,6 +183,9 @@ fi
 echo ""
 info "Installing GitHabits (${MODE} mode)..."
 echo ""
+
+# Verify Claude Code version
+check_claude_version
 
 # Create directories
 mkdir -p "$HOOKS_DIR"

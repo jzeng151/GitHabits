@@ -1,6 +1,6 @@
 # GitHabits TODOs
 
-## T1: Claude Code version check in setup.sh
+## ~~T1: Claude Code version check in setup.sh~~ [DONE — v2.1.91 floor, interactive upgrade prompt]
 **What:** Check `claude --version` during install and print a clear error if the user's Claude Code version predates the JSON+exit2 hook fix.
 **Why:** The hook's core blocking behavior was broken in Claude Code ~v2.1.32 (Opus 4.6 era). Users on older versions get silent failures with no explanation.
 **Pros:** Prevents confusing broken installs. Points users to upgrade path.
