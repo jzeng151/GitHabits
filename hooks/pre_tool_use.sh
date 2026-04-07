@@ -120,7 +120,7 @@ I've paused the command. Want me to get you back on a branch first?"
   fi
 
   # ── git commit on main/master ────────────────────────────────────────────
-  if echo "$SUBCMD" | grep -qE '(^|[[:space:]])git[[:space:]]+commit'; then
+  if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+commit'; then
     if is_main_branch "$BRANCH"; then
       emit_block "Learning moment: you're about to commit directly to '$BRANCH'.
 
@@ -139,11 +139,23 @@ I've paused the command. Want me to create that branch for you?"
   fi
 
   # ── git push targeting main/master ──────────────────────────────────────
-  if echo "$SUBCMD" | grep -qE '(^|[[:space:]])git[[:space:]]+push'; then
+  if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+push'; then
     TARGET=""
     # Explicit target: git push origin main / git push origin master
-    if echo "$SUBCMD" | grep -qE '[[:space:]](main|master)[[:space:]]*$'; then
-      TARGET=$(echo "$SUBCMD" | grep -oE '[[:space:]](main|master)[[:space:]]*$' | tr -d '[:space:]')
+    if echo "$SUBCMD" | grep -qE '[[:space:]](main|master)([[:space:]]|$)'; then
+      TARGET=$(echo "$SUBCMD" | grep -oE '[[:space:]](main|master)([[:space:]]|$)' | head -n1 | tr -d '[:space:]')
+    fi
+    # Explicit refspec targeting main/master: git push origin HEAD:main
+    if [ -z "$TARGET" ]; then
+      if echo "$SUBCMD" | grep -qE '[[:space:]]\S+:(main|master)([[:space:]]|$)'; then
+        TARGET=$(echo "$SUBCMD" | grep -oE ':(main|master)([[:space:]]|$)' | head -n1 | tr -d ': ')
+      fi
+    fi
+    # git push origin HEAD when on main/master (HEAD resolves to current branch)
+    if [ -z "$TARGET" ] && is_main_branch "$BRANCH"; then
+      if echo "$SUBCMD" | grep -qE '[[:space:]]HEAD([[:space:]]|$)'; then
+        TARGET="$BRANCH"
+      fi
     fi
     # Bare push (git push / git push origin) when on main/master
     if [ -z "$TARGET" ] && is_main_branch "$BRANCH"; then
@@ -166,7 +178,7 @@ I've paused the push. Want me to push to a feature branch instead?"
   fi
 
   # ── git merge into main/master ───────────────────────────────────────────
-  if echo "$SUBCMD" | grep -qE '(^|[[:space:]])git[[:space:]]+merge'; then
+  if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+merge'; then
     if is_main_branch "$BRANCH"; then
       emit_block "Learning moment: you're about to merge directly into '$BRANCH'.
 
