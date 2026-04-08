@@ -144,7 +144,7 @@ Or from a terminal:
 ```bash
 git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
 bash /tmp/githabits/setup.sh --uninstall        # global
-# or: bash /tmp/githabits/setup.sh --project --uninstall
+bash /tmp/githabits/setup.sh --project --uninstall # or project scope only
 rm -rf /tmp/githabits
 ```
 
