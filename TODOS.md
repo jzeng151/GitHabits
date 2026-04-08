@@ -15,3 +15,13 @@
 **Cons:** Documented override could be misused by users who want to permanently skip enforcement.
 **Context:** README Configuration section: `GITHABITS_ALLOW_MAIN=1 claude "save my work"` for one-time bypasses. `setup.sh --uninstall` to remove permanently.
 **Depends on:** README file existing.
+
+## T3: Merged-PR detection in post_tool_use.sh
+**What:** When the user runs `git pull` or `git fetch` on a feature branch, detect if the PR for that branch was already merged into main and suggest cleanup (delete branch, switch to main, pull).
+**Why:** The full workflow loop needs a signal for "PR was merged" to prompt the user through cleanup and starting the next feature. Without this, the loop stalls after the PR step.
+**Signal options:**
+  - `git merge-base --is-ancestor origin/<branch> origin/main` — true if branch commits are in main. False positive risk: new branch with no commits also passes.
+  - Check if `origin/<branch>` remote ref was deleted (GitHub auto-deletes on merge). Run `git ls-remote --heads origin <branch>` — if empty, branch was deleted on GitHub (likely merged).
+  - Combination: remote branch deleted AND local commits are in origin/main = high confidence.
+**Tradeoff:** Requires `git fetch` to be current. The post hook fires after `git pull`/`git fetch`, so remote refs should be fresh. `git ls-remote` adds a network call (~200ms).
+**Depends on:** User decision on which signal to use and acceptable false positive rate.

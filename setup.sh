@@ -61,6 +61,7 @@ check_claude_version() {
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SRC="$SCRIPT_DIR/hooks/pre_tool_use.sh"
+POST_HOOK_SRC="$SCRIPT_DIR/hooks/post_tool_use.sh"
 CLAUDE_MD_SRC="$SCRIPT_DIR/templates/CLAUDE.md"
 MARKER_START="# GitHabits START"
 MARKER_END="# GitHabits END"
@@ -108,6 +109,7 @@ HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 CLAUDE_MD_FILE="$CLAUDE_DIR/CLAUDE.md"
 HOOK_DEST="$HOOKS_DIR/pre_tool_use.sh"
+POST_HOOK_DEST="$HOOKS_DIR/post_tool_use.sh"
 
 # ── Require python3 ───────────────────────────────────────────────────────────
 if ! command -v python3 >/dev/null 2>&1; then
@@ -120,37 +122,41 @@ fi
 if [ "$UNINSTALL" = true ]; then
   info "Uninstalling GitHabits..."
 
-  # Remove hook script
-  if [ -f "$HOOK_DEST" ]; then
-    rm -f "$HOOK_DEST"
-    success "Removed hook: $HOOK_DEST"
-  fi
+  # Remove hook scripts
+  for hook_file in "$HOOK_DEST" "$POST_HOOK_DEST"; do
+    if [ -f "$hook_file" ]; then
+      rm -f "$hook_file"
+      success "Removed hook: $hook_file"
+    fi
+  done
 
-  # Remove hook entry from settings.json
+  # Remove hook entries from settings.json
   if [ -f "$SETTINGS_FILE" ]; then
-    python3 - "$SETTINGS_FILE" "$HOOK_DEST" <<'PYEOF'
+    python3 - "$SETTINGS_FILE" "$HOOK_DEST" "$POST_HOOK_DEST" <<'PYEOF'
 import json, sys
-path, hook_cmd = sys.argv[1], sys.argv[2]
+path = sys.argv[1]
+hook_cmds = sys.argv[2:]
 with open(path) as f:
     cfg = json.load(f)
 hooks = cfg.get("hooks", {})
-ptu = hooks.get("PreToolUse", [])
-new_ptu = []
-for entry in ptu:
-    sub = entry.get("hooks", [])
-    sub = [h for h in sub if h.get("command") != hook_cmd]
-    if sub:
-        entry["hooks"] = sub
-        new_ptu.append(entry)
-if new_ptu:
-    cfg["hooks"]["PreToolUse"] = new_ptu
-elif "PreToolUse" in hooks:
-    del cfg["hooks"]["PreToolUse"]
+for key in ["PreToolUse", "PostToolUse"]:
+    entries = hooks.get(key, [])
+    new_entries = []
+    for entry in entries:
+        sub = entry.get("hooks", [])
+        sub = [h for h in sub if h.get("command") not in hook_cmds]
+        if sub:
+            entry["hooks"] = sub
+            new_entries.append(entry)
+    if new_entries:
+        cfg["hooks"][key] = new_entries
+    elif key in hooks:
+        del cfg["hooks"][key]
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
 PYEOF
-    success "Removed hook entry from: $SETTINGS_FILE"
+    success "Removed hook entries from: $SETTINGS_FILE"
   fi
 
   # Remove GitHabits block from CLAUDE.md
@@ -191,57 +197,48 @@ check_claude_version
 mkdir -p "$HOOKS_DIR"
 mkdir -p "$CLAUDE_DIR"
 
-# 1. Install hook script
+# 1. Install hook scripts
 cp "$HOOK_SRC" "$HOOK_DEST"
 chmod +x "$HOOK_DEST"
 success "Hook installed: $HOOK_DEST"
 
-# 2. Register hook in settings.json
-if [ ! -f "$SETTINGS_FILE" ]; then
-  # Create from scratch
-  python3 - "$SETTINGS_FILE" "$HOOK_DEST" <<'PYEOF'
+cp "$POST_HOOK_SRC" "$POST_HOOK_DEST"
+chmod +x "$POST_HOOK_DEST"
+success "Hook installed: $POST_HOOK_DEST"
+
+# 2. Register hooks in settings.json
+# Registers both PreToolUse and PostToolUse (idempotent)
+register_hook() {
+  local hook_key="$1"
+  local hook_cmd="$2"
+
+  RESULT=$(python3 - "$SETTINGS_FILE" "$hook_key" "$hook_cmd" <<'PYEOF'
 import json, sys
-path, hook_cmd = sys.argv[1], sys.argv[2]
-cfg = {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [{"type": "command", "command": hook_cmd}]
-      }
-    ]
-  }
-}
-with open(path, "w") as f:
-    json.dump(cfg, f, indent=2)
-    f.write("\n")
-PYEOF
-  success "Created: $SETTINGS_FILE"
-else
-  # Merge into existing settings.json (idempotent)
-  RESULT=$(python3 - "$SETTINGS_FILE" "$HOOK_DEST" <<'PYEOF'
-import json, sys
-path, hook_cmd = sys.argv[1], sys.argv[2]
-with open(path) as f:
-    cfg = json.load(f)
+path, key, hook_cmd = sys.argv[1], sys.argv[2], sys.argv[3]
+
+if not __import__('os').path.exists(path):
+    cfg = {}
+else:
+    with open(path) as f:
+        cfg = json.load(f)
 
 hooks = cfg.setdefault("hooks", {})
-ptu = hooks.setdefault("PreToolUse", [])
+entries = hooks.setdefault(key, [])
 
 # Check if already registered (idempotent)
-for entry in ptu:
+for entry in entries:
     for h in entry.get("hooks", []):
         if h.get("command") == hook_cmd:
             print("already_registered")
             sys.exit(0)
 
 # Find existing Bash matcher or create new entry
-for entry in ptu:
+for entry in entries:
     if entry.get("matcher") == "Bash":
         entry.setdefault("hooks", []).append({"type": "command", "command": hook_cmd})
         break
 else:
-    ptu.append({
+    entries.append({
         "matcher": "Bash",
         "hooks": [{"type": "command", "command": hook_cmd}]
     })
@@ -253,11 +250,14 @@ print("registered")
 PYEOF
   )
   if [ "$RESULT" = "already_registered" ]; then
-    warn "Hook already registered in $SETTINGS_FILE (skipped)"
+    warn "$hook_key hook already registered (skipped)"
   else
-    success "Registered hook in: $SETTINGS_FILE"
+    success "Registered $hook_key hook in: $SETTINGS_FILE"
   fi
-fi
+}
+
+register_hook "PreToolUse" "$HOOK_DEST"
+register_hook "PostToolUse" "$POST_HOOK_DEST"
 
 # 3. Inject CLAUDE.md rules (idempotent)
 if [ -f "$CLAUDE_MD_FILE" ] && grep -q "$MARKER_START" "$CLAUDE_MD_FILE" 2>/dev/null; then
@@ -276,6 +276,7 @@ echo "What happens now:"
 echo "  • Claude Code will explain every git command before running it"
 echo "  • Committing or pushing to main/master is blocked with a tutorial"
 echo "  • You'll be guided to create a feature branch instead"
+echo "  • After each git milestone, Claude suggests the next step in the workflow"
 echo ""
 echo "To uninstall:  ./setup.sh --uninstall"
 echo "To override (solo project):  GITHABITS_ALLOW_MAIN=1 (see README)"
