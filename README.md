@@ -58,7 +58,7 @@ Claude will ask you global vs. project, run the installer, and clean up after it
 ```bash
 git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
 bash /tmp/githabits/setup.sh        # global
-# or: bash /tmp/githabits/setup.sh --project
+bash /tmp/githabits/setup.sh --project     # or project scope only
 rm -rf /tmp/githabits
 ```
 
