@@ -68,6 +68,77 @@ BRANCH=$(current_branch)
 while IFS= read -r SUBCMD; do
   [ -z "$SUBCMD" ] && continue
 
+  # ── Destructive: git reset --hard ────────────────────────────────────────
+  if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+reset[[:space:]].*--hard'; then
+    emit_block "Learning moment: you're about to run 'git reset --hard'.
+
+This permanently deletes all uncommitted changes — anything you've modified
+but haven't committed yet will be gone forever. There is no undo.
+
+If you want to save your changes before resetting:
+  git stash                      (saves your changes temporarily)
+  git stash pop                  (brings them back later)
+
+If you want to undo the last commit but keep your changes:
+  git reset --soft HEAD~1        (undo commit, keep changes staged)
+
+I've paused the command. Want me to stash your changes first?"
+  fi
+
+  # ── Destructive: git clean -f ──────────────────────────────────────────────
+  if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+clean[[:space:]]'; then
+    # Block if -f is present but -n (dry run) is not
+    if echo "$SUBCMD" | grep -qE '[[:space:]]-[a-zA-Z]*f' && \
+       ! echo "$SUBCMD" | grep -qE '[[:space:]]-[a-zA-Z]*n'; then
+      emit_block "Learning moment: you're about to run 'git clean' with the force flag.
+
+This permanently deletes all untracked files — files that Git doesn't know
+about yet. This includes new files you created but haven't added with
+'git add'. There is no undo.
+
+If you want to see what would be deleted first:
+  git clean -n                   (dry run — shows what would be deleted)
+  git clean -nd                  (also shows directories)
+
+I've paused the command. Want me to do a dry run first so you can see
+what would be deleted?"
+    fi
+  fi
+
+  # ── Destructive: git checkout -- <path> ────────────────────────────────────
+  if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+checkout[[:space:]]+--[[:space:]]'; then
+    emit_block "Learning moment: you're about to discard uncommitted changes.
+
+'git checkout -- <path>' permanently overwrites your working files with
+the last committed version. Any changes you haven't committed will be
+gone forever.
+
+Safer alternatives:
+  git stash                      (saves changes, can get them back later)
+  git diff <path>                (review what you'd lose first)
+
+I've paused the command. Want me to show you what would be discarded?"
+  fi
+
+  # ── Destructive: git restore (without --staged) ────────────────────────────
+  if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+restore[[:space:]]'; then
+    # Allow: git restore --staged (just unstaging, not destructive)
+    if ! echo "$SUBCMD" | grep -qE -- '--staged'; then
+      emit_block "Learning moment: you're about to discard uncommitted changes.
+
+'git restore <path>' permanently overwrites your working files with the
+last committed version. Any changes you haven't committed will be gone
+forever.
+
+Safer alternatives:
+  git stash                      (saves changes, can get them back later)
+  git diff                       (review what you'd lose first)
+  git restore --staged <path>    (just unstage, keeps your changes)
+
+I've paused the command. Want me to show you what would be discarded?"
+    fi
+  fi
+
   # ── Detached HEAD state ──────────────────────────────────────────────────
   if [ -z "$BRANCH" ]; then
     if echo "$SUBCMD" | grep -qE '(^|[[:space:]])git[[:space:]]+(commit|merge|push)'; then
@@ -249,6 +320,16 @@ A pull request lets you (or your team) review changes before they go live.
 
 I've paused the push. Want me to push to a feature branch instead?"
       fi
+    fi
+
+    # ── Warn: force push to feature branch (non-blocking) ──────────────
+    if [ "$IS_FORCE" = true ] && [ -z "$TARGET" ]; then
+      emit_warn "You're force-pushing to a feature branch. This overwrites the remote
+version. It's usually fine for your own branches, but be careful if anyone
+else is working on this branch — their version will be overwritten.
+
+Tip: '--force-with-lease' is safer than '--force' because it checks whether
+anyone else pushed changes first."
     fi
   fi
 
