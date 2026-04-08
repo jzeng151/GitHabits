@@ -24,7 +24,8 @@ STDIN=$(cat)
 # ── Fast path ─────────────────────────────────────────────────────────────────
 # Exit immediately if this isn't a git command.
 # Zero subprocess overhead for npm, ls, echo, etc.
-echo "$STDIN" | grep -q '"git ' || exit 0
+# Match "git " anywhere in the JSON (covers chained: "echo x && git commit")
+echo "$STDIN" | grep -q 'git ' || exit 0
 
 # ── Parse command from stdin JSON ─────────────────────────────────────────────
 # stdin format: {"tool_name": "Bash", "tool_input": {"command": "..."}}

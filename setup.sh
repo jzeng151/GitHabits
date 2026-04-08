@@ -81,17 +81,23 @@ error()   { echo -e "${RED}✗${RESET} $*" >&2; }
 # ── Parse flags ───────────────────────────────────────────────────────────────
 MODE="global"
 UNINSTALL=false
+EXPLAIN_SCOPE=""
 
 for arg in "$@"; do
   case "$arg" in
     --project)   MODE="project" ;;
     --uninstall) UNINSTALL=true ;;
+    --explain-scope=*)
+      EXPLAIN_SCOPE="${arg#*=}"
+      ;;
     --help|-h)
-      echo "Usage: ./setup.sh [--project] [--uninstall]"
+      echo "Usage: ./setup.sh [--project] [--uninstall] [--explain-scope=SCOPE]"
       echo ""
-      echo "  (no flag)    Install globally in ~/.claude/"
-      echo "  --project    Install in .claude/ (this project only)"
-      echo "  --uninstall  Remove all GitHabits files and config"
+      echo "  (no flag)              Install globally in ~/.claude/"
+      echo "  --project              Install in .claude/ (this project only)"
+      echo "  --uninstall            Remove all GitHabits files and config"
+      echo "  --explain-scope=SCOPE  Set explanation scope: all, git, dev, none"
+      echo "                         Can be used standalone to change scope after install"
       exit 0
       ;;
     *) error "Unknown argument: $arg"; exit 1 ;;
@@ -110,6 +116,20 @@ SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 CLAUDE_MD_FILE="$CLAUDE_DIR/CLAUDE.md"
 HOOK_DEST="$HOOKS_DIR/pre_tool_use.sh"
 POST_HOOK_DEST="$HOOKS_DIR/post_tool_use.sh"
+CONFIG_FILE="$CLAUDE_DIR/githabits.conf"
+
+# ── Scope-only mode ──────────────────────────────────────────────────────────
+# Allow changing scope without a full reinstall
+if [ -n "$EXPLAIN_SCOPE" ] && [ "$UNINSTALL" = false ]; then
+  case "$EXPLAIN_SCOPE" in
+    all|git|dev|none) ;;
+    *) error "Invalid scope: $EXPLAIN_SCOPE. Use: all, git, dev, none"; exit 1 ;;
+  esac
+  mkdir -p "$CLAUDE_DIR"
+  echo "EXPLAIN_SCOPE=$EXPLAIN_SCOPE" > "$CONFIG_FILE"
+  success "Explanation scope set to: $EXPLAIN_SCOPE"
+  exit 0
+fi
 
 # ── Require python3 ───────────────────────────────────────────────────────────
 if ! command -v python3 >/dev/null 2>&1; then
@@ -121,6 +141,12 @@ fi
 # ── Uninstall ─────────────────────────────────────────────────────────────────
 if [ "$UNINSTALL" = true ]; then
   info "Uninstalling GitHabits..."
+
+  # Remove config file
+  if [ -f "$CONFIG_FILE" ]; then
+    rm -f "$CONFIG_FILE"
+    success "Removed config: $CONFIG_FILE"
+  fi
 
   # Remove hook scripts
   for hook_file in "$HOOK_DEST" "$POST_HOOK_DEST"; do
@@ -193,9 +219,34 @@ echo ""
 # Verify Claude Code version
 check_claude_version
 
+# Ask about explanation scope (unless already set via flag)
+if [ -z "$EXPLAIN_SCOPE" ]; then
+  echo ""
+  echo "How much should Claude explain when running commands?"
+  echo ""
+  echo "  1) All commands    — explain every bash command (ls, npm, curl, etc.)"
+  echo "  2) Git commands    — only explain git commands (recommended for git learners)"
+  echo "  3) Dev tools       — git + npm, pip, curl, docker, chmod, mkdir, etc."
+  echo "  4) None            — no automatic explanations"
+  echo ""
+  printf "  Choose [1-4, default: 2]: "
+  read -r SCOPE_CHOICE
+  case "$SCOPE_CHOICE" in
+    1) EXPLAIN_SCOPE="all" ;;
+    3) EXPLAIN_SCOPE="dev" ;;
+    4) EXPLAIN_SCOPE="none" ;;
+    *) EXPLAIN_SCOPE="git" ;;
+  esac
+  echo ""
+fi
+
 # Create directories
 mkdir -p "$HOOKS_DIR"
 mkdir -p "$CLAUDE_DIR"
+
+# Write config file
+echo "EXPLAIN_SCOPE=$EXPLAIN_SCOPE" > "$CONFIG_FILE"
+success "Explanation scope: $EXPLAIN_SCOPE"
 
 # 1. Install hook scripts
 cp "$HOOK_SRC" "$HOOK_DEST"
@@ -273,11 +324,12 @@ echo ""
 info "GitHabits installed!"
 echo ""
 echo "What happens now:"
-echo "  • Claude Code will explain every git command before running it"
+echo "  • Claude explains commands before running them (scope: $EXPLAIN_SCOPE)"
 echo "  • Committing or pushing to main/master is blocked with a tutorial"
 echo "  • You'll be guided to create a feature branch instead"
 echo "  • After each git milestone, Claude suggests the next step in the workflow"
 echo ""
+echo "To change explanation scope:  ./setup.sh --explain-scope=all|git|dev|none"
 echo "To uninstall:  ./setup.sh --uninstall"
 echo "To override (solo project):  GITHABITS_ALLOW_MAIN=1 (see README)"
 echo ""

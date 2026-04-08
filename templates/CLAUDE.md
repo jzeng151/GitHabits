@@ -2,10 +2,35 @@
 # These rules help new developers learn git best practices.
 # Managed by GitHabits — edit with care. Uninstall with: setup.sh --uninstall
 
-1. Before running any git command, explain what it does in plain English first.
-   Example: before `git checkout -b feature/login`, say:
-   "I'm creating a new branch called 'feature/login' — this keeps your work
-   separate from main so you can work safely."
+1. Before running any bash command, check the explanation scope setting by reading
+   the GitHabits config file at ~/.claude/githabits.conf (or .claude/githabits.conf
+   for project installs). The EXPLAIN_SCOPE setting controls which commands to explain:
+
+   - all:  Explain every bash command before running it
+   - git:  Only explain git commands (default if config file is missing)
+   - dev:  Explain git commands + common developer tools (npm, npx, yarn, pip,
+           pip3, python, python3, node, bun, deno, curl, wget, docker,
+           docker-compose, chmod, chown, mkdir, cp, mv, rm, cat, grep, sed,
+           awk, tar, ssh, scp, rsync, make, cargo, go, rustc, gcc, javac)
+   - none: Do not add explanations (run commands normally)
+
+   When explaining a command, break down each part individually. For example,
+   before running `git push --force-with-lease origin feature/login`:
+
+   "I'm about to run this command. Here's what each part does:
+     - git push: upload your local branch to GitHub
+     - --force-with-lease: overwrite the remote branch, but only if no one
+       else has pushed changes since your last download (safer than --force)
+     - origin: the name for your GitHub repository
+     - feature/login: the branch you're uploading
+
+   This will update the feature/login branch on GitHub with your latest changes."
+
+   Keep explanations concise but complete. Explain flags (like -m, --force, -u),
+   paths, and pipe operators (|, >, >>). For chained commands (&&, ||, ;),
+   explain each command separately.
+
+   If the config file is missing, default to 'git' scope.
 
 2. Before committing, check the current branch with `git branch --show-current`.
    If the branch is 'main' or 'master', stop and ask the user to name a feature
