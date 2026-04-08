@@ -98,6 +98,14 @@ is_main_branch() {
   [ "$1" = "main" ] || [ "$1" = "master" ]
 }
 
+# ── Warning (non-blocking) ───────────────────────────────────────────────────
+# emit_warn <message>
+#   Writes warning to stderr. Does NOT output JSON to stdout.
+#   Does NOT exit — caller continues or exits 0 as needed.
+emit_warn() {
+  echo "[GitHabits WARNING] $1" >&2
+}
+
 # ── Config reading ───────────────────────────────────────────────────────────
 
 # read_config <key> <default>
