@@ -29,6 +29,10 @@ setup_repo() {
   echo "init" > file.txt
   git add file.txt
   git commit -m "initial commit" >/dev/null 2>&1
+  # Disable explanations so milestone/nudge tests aren't affected
+  mkdir -p .claude
+  echo "EXPLAIN_SCOPE=none" > .claude/githabits.conf
+  echo "WORKFLOW_NUDGE=on" >> .claude/githabits.conf
 }
 
 # ── Helper: build PostToolUse JSON stdin ─────────────────────────────────────
@@ -57,7 +61,8 @@ run_hook() {
   json=$(build_json "$cmd" "$output")
 
   STDERR_FILE="$TMPDIR/stderr.tmp"
-  STDOUT=$(echo "$json" | bash "$HOOK" 2>"$STDERR_FILE") && EXIT_CODE=$? || EXIT_CODE=$?
+  # Override HOME to isolate from real ~/.claude/githabits.conf
+  STDOUT=$(echo "$json" | HOME="$TMPDIR/fakehome" bash "$HOOK" 2>"$STDERR_FILE") && EXIT_CODE=$? || EXIT_CODE=$?
   STDERR=$(cat "$STDERR_FILE")
 }
 
@@ -382,7 +387,7 @@ git commit -m "unpushed commit" >/dev/null 2>&1
 
 # Write config enabling nudges
 mkdir -p "$TMPDIR/repo/.claude"
-echo "WORKFLOW_NUDGE=on" > "$TMPDIR/repo/.claude/githabits.conf"
+printf 'EXPLAIN_SCOPE=none\nWORKFLOW_NUDGE=on\n' > "$TMPDIR/repo/.claude/githabits.conf"
 
 # git status should trigger a nudge about unpushed commits
 run_hook "git status" "On branch feature/nudge-test"
@@ -427,13 +432,13 @@ echo "--- Nudge: no nudge when WORKFLOW_NUDGE=off ---"
 
 git checkout feature/nudge-test >/dev/null 2>&1
 
-echo "WORKFLOW_NUDGE=off" > "$TMPDIR/repo/.claude/githabits.conf"
+printf 'EXPLAIN_SCOPE=none\nWORKFLOW_NUDGE=off\n' > "$TMPDIR/repo/.claude/githabits.conf"
 
 run_hook "git status" "On branch feature/nudge-test"
 assert_silent "git status with nudge off"
 
 # Re-enable for remaining tests
-echo "WORKFLOW_NUDGE=on" > "$TMPDIR/repo/.claude/githabits.conf"
+printf 'EXPLAIN_SCOPE=none\nWORKFLOW_NUDGE=on\n' > "$TMPDIR/repo/.claude/githabits.conf"
 
 echo ""
 echo "--- Nudge: no nudge on non-git commands ---"

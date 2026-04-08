@@ -59,28 +59,26 @@ else
   fail "Template does not mention EXPLAIN_SCOPE"
 fi
 
-for scope in all git dev none; do
-  if grep -qF -- "- $scope:" "$TEMPLATE"; then
-    pass "Template documents scope '$scope'"
-  else
-    fail "Template missing scope '$scope'"
-  fi
-done
-
-# ── T2: Template has the breakdown example ───────────────────────────────────
-echo ""
-echo "--- T2: CLAUDE.md template has explanation example ---"
-
-if grep -q "git push" "$TEMPLATE" && grep -q "force-with-lease" "$TEMPLATE"; then
-  pass "Template has git push --force-with-lease example"
+if grep -q "PostToolUse hook" "$TEMPLATE"; then
+  pass "Template references PostToolUse hook for explanations"
 else
-  fail "Template missing the breakdown example"
+  fail "Template missing PostToolUse hook reference"
 fi
 
-if grep -q "origin: the name for your GitHub repository" "$TEMPLATE"; then
-  pass "Template breaks down 'origin'"
+# ── T2: Template has explanation guidance ────────────────────────────────────
+echo ""
+echo "--- T2: CLAUDE.md template has explanation guidance ---"
+
+if grep -q "break down each part" "$TEMPLATE"; then
+  pass "Template has explanation guidance"
 else
-  fail "Template missing 'origin' breakdown"
+  fail "Template missing explanation guidance"
+fi
+
+if grep -q "flags" "$TEMPLATE" && grep -q "arguments" "$TEMPLATE"; then
+  pass "Template mentions flags and arguments"
+else
+  fail "Template missing flags/arguments guidance"
 fi
 
 # ── T3: --explain-scope=VALUE standalone mode ────────────────────────────────
@@ -396,13 +394,11 @@ if [ -f "$GLOBAL_CLAUDE_MD" ]; then
     fail "Global CLAUDE.md missing githabits.conf reference"
   fi
 
-  for scope in all git dev none; do
-    if grep -qF -- "- $scope:" "$GLOBAL_CLAUDE_MD"; then
-      pass "Global CLAUDE.md documents scope '$scope'"
-    else
-      fail "Global CLAUDE.md missing scope '$scope'"
-    fi
-  done
+  if grep -q "PostToolUse hook" "$GLOBAL_CLAUDE_MD" || grep -q "hook" "$GLOBAL_CLAUDE_MD"; then
+    pass "Global CLAUDE.md references hook-driven explanations"
+  else
+    fail "Global CLAUDE.md missing hook reference"
+  fi
 else
   fail "Global CLAUDE.md not found at $GLOBAL_CLAUDE_MD"
 fi
@@ -423,15 +419,16 @@ else
   fail "Global config not found at $GLOBAL_CONFIG"
 fi
 
-# ── T13: Template dev tools list is complete ─────────────────────────────────
+# ── T13: Hook dev tools list is complete ──────────────────────────────────────
 echo ""
 echo "--- T13: Dev tools list coverage ---"
 
-# These tools should be in the dev scope list in CLAUDE.md
+# These tools should be in the dev scope regex in the post hook
+POST_HOOK="$PROJECT_DIR/hooks/post_tool_use.sh"
 DEV_TOOLS="npm npx yarn pip python3 node curl wget docker chmod mkdir cp mv rm cat grep sed awk tar ssh scp rsync make cargo go"
 
 for tool in $DEV_TOOLS; do
-  if grep -q "$tool" "$TEMPLATE"; then
+  if grep -q "$tool" "$POST_HOOK"; then
     pass "Dev tools list includes '$tool'"
   else
     fail "Dev tools list missing '$tool'"
