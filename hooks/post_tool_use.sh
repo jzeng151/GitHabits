@@ -19,15 +19,60 @@ fi
 
 # ── Read config ──────────────────────────────────────────────────────────────
 WORKFLOW_NUDGE=$(read_config "WORKFLOW_NUDGE" "on")
+EXPLAIN_SCOPE=$(read_config "EXPLAIN_SCOPE" "git")
 
 # ── Read stdin ────────────────────────────────────────────────────────────────
 STDIN=$(cat)
 
 # ── Fast path ─────────────────────────────────────────────────────────────────
-echo "$STDIN" | grep -q 'git ' || exit 0
+HAS_GIT=false
+echo "$STDIN" | grep -q 'git ' && HAS_GIT=true
+
+# For scope=none or git, non-git commands can exit immediately
+if [ "$HAS_GIT" = false ]; then
+  if [ "$EXPLAIN_SCOPE" = "none" ] || [ "$EXPLAIN_SCOPE" = "git" ]; then
+    exit 0
+  fi
+fi
 
 # ── Parse command from stdin JSON ─────────────────────────────────────────────
 parse_command_and_output "$STDIN" || exit 0
+
+# ── Explanation scope matching ───────────────────────────────────────────────
+DEV_TOOLS='(git|npm|npx|yarn|pip|pip3|python|python3|node|bun|deno|curl|wget|docker|docker-compose|chmod|chown|mkdir|cp|mv|rm|cat|grep|sed|awk|tar|ssh|scp|rsync|make|cargo|go|rustc|gcc|javac)'
+
+should_explain() {
+  local cmd="$1"
+  case "$EXPLAIN_SCOPE" in
+    none) return 1 ;;
+    all)  return 0 ;;
+    git)  echo "$cmd" | grep -qE '(^|[[:space:]])git[[:space:]]' ;;
+    dev)  echo "$cmd" | grep -qE "(^|[[:space:]])${DEV_TOOLS}[[:space:]]" ;;
+    *)    return 1 ;;
+  esac
+}
+
+# Check if this command should get an explanation
+EXPLAIN_PREFIX=""
+if should_explain "$CMD"; then
+  EXPLAIN_PREFIX="GITHABITS_EXPLAIN: The user just ran: $CMD. Before showing any other output, explain what this command does in plain English. Break down each part: the base command, flags, arguments, and pipe operators. Keep it concise but complete."
+fi
+
+# For non-git commands, emit explanation (if any) and exit — no milestone/nudge logic
+if [ "$HAS_GIT" = false ]; then
+  if [ -n "$EXPLAIN_PREFIX" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$EXPLAIN_PREFIX" <<'PYEOF'
+import sys, json
+print(json.dumps({"additionalContext": "GITHABITS: " + sys.argv[1]}))
+PYEOF
+    else
+      escaped=$(printf '%s' "$EXPLAIN_PREFIX" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')
+      printf '{"additionalContext":"GITHABITS: %s"}' "$escaped"
+    fi
+  fi
+  exit 0
+fi
 
 # ── Detect failed commands ────────────────────────────────────────────────
 # Don't suggest next steps if the command failed
@@ -39,8 +84,12 @@ fi
 
 # ── Emit a workflow hint ──────────────────────────────────────────────────────
 # Outputs JSON to stdout only. Claude reads additionalContext and rephrases.
+# Prepends EXPLAIN_PREFIX if set (combines explanation with milestone hint).
 emit_hint() {
   local hint="$1"
+  if [ -n "$EXPLAIN_PREFIX" ]; then
+    hint="$EXPLAIN_PREFIX | $hint"
+  fi
   if command -v python3 >/dev/null 2>&1; then
     python3 - "$hint" <<'PYEOF'
 import sys, json
@@ -158,6 +207,20 @@ done <<< "$SUBCMDS"
 if [ -z "$LAST_OP" ]; then
   if [ "$WORKFLOW_NUDGE" = "on" ]; then
     check_workflow_nudge
+    # If nudge emitted a hint (via emit_hint), it already exited.
+    # If nudge found nothing, fall through to standalone explanation.
+  fi
+  # Emit standalone explanation if scope matched but no hint/nudge fired
+  if [ -n "$EXPLAIN_PREFIX" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "$EXPLAIN_PREFIX" <<'PYEOF'
+import sys, json
+print(json.dumps({"additionalContext": "GITHABITS: " + sys.argv[1]}))
+PYEOF
+    else
+      escaped=$(printf '%s' "$EXPLAIN_PREFIX" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')
+      printf '{"additionalContext":"GITHABITS: %s"}' "$escaped"
+    fi
   fi
   exit 0
 fi
@@ -215,5 +278,18 @@ case "$LAST_OP" in
     # TODO: merged PR detection on feature branch (see TODOS.md T3)
     ;;
 esac
+
+# ── Standalone explanation (no milestone/nudge hint fired) ───────────────────
+if [ -n "$EXPLAIN_PREFIX" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$EXPLAIN_PREFIX" <<'PYEOF'
+import sys, json
+print(json.dumps({"additionalContext": "GITHABITS: " + sys.argv[1]}))
+PYEOF
+  else
+    escaped=$(printf '%s' "$EXPLAIN_PREFIX" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ')
+    printf '{"additionalContext":"GITHABITS: %s"}' "$escaped"
+  fi
+fi
 
 exit 0

@@ -2,41 +2,20 @@
 # These rules help new developers learn git best practices.
 # Managed by GitHabits — edit with care. Uninstall with: setup.sh --uninstall
 
-1. Before running any bash command, check the explanation scope setting by reading
-   the GitHabits config file at ~/.claude/githabits.conf (or .claude/githabits.conf
-   for project installs). The EXPLAIN_SCOPE setting controls which commands to explain:
+1. Command explanations are handled automatically by the PostToolUse hook
+   based on the EXPLAIN_SCOPE setting in ~/.claude/githabits.conf (or
+   .claude/githabits.conf for project installs). The hook will prompt you
+   to explain commands when appropriate — you don't need to independently
+   decide which commands to explain.
 
-   - all:  Explain every bash command before running it
-   - git:  Only explain git commands (default if config file is missing)
-   - dev:  Explain git commands + common developer tools (npm, npx, yarn, pip,
-           pip3, python, python3, node, bun, deno, curl, wget, docker,
-           docker-compose, chmod, chown, mkdir, cp, mv, rm, cat, grep, sed,
-           awk, tar, ssh, scp, rsync, make, cargo, go, rustc, gcc, javac)
-   - none: Do not add explanations (run commands normally)
+   When the hook prompts you to explain a command, break down each part:
+   the base command, flags, arguments, and pipe operators. Keep it concise
+   but complete. For chained commands (&&, ||, ;), explain each separately.
 
-   When explaining a command, break down each part individually. For example,
-   before running `git push --force-with-lease origin feature/login`:
-
-   "I'm about to run this command. Here's what each part does:
-     - git push: upload your local branch to GitHub
-     - --force-with-lease: overwrite the remote branch, but only if no one
-       else has pushed changes since your last download (safer than --force)
-     - origin: the name for your GitHub repository
-     - feature/login: the branch you're uploading
-
-   This will update the feature/login branch on GitHub with your latest changes."
-
-   Keep explanations concise but complete. Explain flags (like -m, --force, -u),
-   paths, and pipe operators (|, >, >>). For chained commands (&&, ||, ;),
-   explain each command separately.
-
-   If the config file is missing, default to 'git' scope.
-
-   The same config file also has a WORKFLOW_NUDGE setting (on or off). When set
-   to 'on', the PostToolUse hook will remind the user about unfinished workflow
-   steps (unpushed commits, missing pull requests, etc.) when they run git
-   commands that don't trigger a milestone hint. You don't need to duplicate
-   these reminders — the hook handles them automatically.
+   The same config file also has a WORKFLOW_NUDGE setting (on or off). When
+   set to 'on', the hook will remind the user about unfinished workflow
+   steps (unpushed commits, missing pull requests, etc.). You don't need to
+   duplicate these reminders — the hook handles them automatically.
 
 2. Before committing, check the current branch with `git branch --show-current`.
    If the branch is 'main' or 'master', stop and ask the user to name a feature
