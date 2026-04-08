@@ -162,6 +162,21 @@ Nudges only fire when there's no milestone hint (they won't repeat what you just
 
 ---
 
+## Token usage
+
+GitHabits adds ~750 tokens to your context window (one-time, from the CLAUDE.md rules) plus small per-event costs when hooks fire:
+
+| Event | Input tokens | Output tokens |
+|-------|-------------|---------------|
+| Block (dangerous op detected) | ~160 | ~200 |
+| Milestone hint (after commit/push) | ~120 | ~250 |
+| Command explanation | ~66 | ~200 |
+| Workflow nudge | ~40 | ~150 |
+
+A typical active session (several commits, a push, explanations on) runs about **3,500-4,000 tokens total**. Setting `EXPLAIN_SCOPE=none` cuts per-command overhead to zero. The hook scripts themselves run in bash with zero token cost — only the JSON they return to Claude consumes tokens.
+
+---
+
 ## Changing settings
 
 You can change GitHabits settings anytime after install. Just ask Claude:
