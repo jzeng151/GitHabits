@@ -367,6 +367,110 @@ fi
 git checkout main >/dev/null 2>&1
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ── WORKFLOW NUDGE TESTS ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+echo ""
+echo "--- Nudge: unpushed commits on feature branch ---"
+
+# Set up: create a feature branch with a commit (no remote, so unpushed)
+setup_repo
+git checkout -b feature/nudge-test >/dev/null 2>&1
+echo "change" > nudge.txt
+git add nudge.txt
+git commit -m "unpushed commit" >/dev/null 2>&1
+
+# Write config enabling nudges
+mkdir -p "$TMPDIR/repo/.claude"
+echo "WORKFLOW_NUDGE=on" > "$TMPDIR/repo/.claude/githabits.conf"
+
+# git status should trigger a nudge about unpushed commits
+run_hook "git status" "On branch feature/nudge-test"
+assert_hint "git status with unpushed commits" "unpushed"
+
+# git log should also trigger the nudge
+run_hook "git log --oneline" "abc123 unpushed commit"
+assert_hint "git log with unpushed commits" "unpushed"
+
+# git diff should also trigger the nudge
+run_hook "git diff" ""
+assert_hint "git diff with unpushed commits" "unpushed"
+
+# git add should also trigger the nudge
+run_hook "git add ." ""
+assert_hint "git add with unpushed commits" "unpushed"
+
+echo ""
+echo "--- Nudge: no nudge after milestone hint (commit) ---"
+
+# git commit produces a milestone hint ("push next"), not a nudge
+run_hook "git commit -m 'another change'" "[feature/nudge-test abc123] another change"
+# Should get milestone hint about pushing, not a nudge about unpushed
+if echo "$STDOUT" | grep -qi "unpushed"; then
+  fail "git commit should emit milestone hint, not nudge"
+else
+  pass "git commit emits milestone hint, not nudge"
+fi
+
+echo ""
+echo "--- Nudge: no nudge on main branch ---"
+
+git checkout main >/dev/null 2>&1
+
+run_hook "git status" "On branch main"
+# On main, git status has no LAST_OP and nudge should skip main branches
+# The pull/fetch hint only fires when LAST_OP is "pull", not for status
+assert_silent "git status on main (no nudge)"
+
+echo ""
+echo "--- Nudge: no nudge when WORKFLOW_NUDGE=off ---"
+
+git checkout feature/nudge-test >/dev/null 2>&1
+
+echo "WORKFLOW_NUDGE=off" > "$TMPDIR/repo/.claude/githabits.conf"
+
+run_hook "git status" "On branch feature/nudge-test"
+assert_silent "git status with nudge off"
+
+# Re-enable for remaining tests
+echo "WORKFLOW_NUDGE=on" > "$TMPDIR/repo/.claude/githabits.conf"
+
+echo ""
+echo "--- Nudge: no nudge on non-git commands ---"
+
+run_hook "ls -la" "file.txt"
+assert_silent "ls with nudge on (fast path)"
+
+run_hook "npm install" "added 100 packages"
+assert_silent "npm install with nudge on (fast path)"
+
+echo ""
+echo "--- Nudge: nudge JSON is valid ---"
+
+run_hook "git status" "On branch feature/nudge-test"
+if [ -n "$STDOUT" ]; then
+  if echo "$STDOUT" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+    pass "Nudge output is valid JSON"
+  else
+    fail "Nudge output is invalid JSON: $STDOUT"
+  fi
+else
+  fail "No nudge output for JSON validity test"
+fi
+
+echo ""
+echo "--- Nudge: hint contains branch name ---"
+
+run_hook "git status" "On branch feature/nudge-test"
+if echo "$STDOUT" | grep -q "feature/nudge-test"; then
+  pass "Nudge mentions current branch name"
+else
+  fail "Nudge missing branch name"
+fi
+
+git checkout main >/dev/null 2>&1
+
+# ══════════════════════════════════════════════════════════════════════════════
 echo ""
 echo "=== Results ==="
 echo "  Passed: $PASS"

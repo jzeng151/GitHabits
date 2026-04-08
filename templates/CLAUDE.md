@@ -32,6 +32,12 @@
 
    If the config file is missing, default to 'git' scope.
 
+   The same config file also has a WORKFLOW_NUDGE setting (on or off). When set
+   to 'on', the PostToolUse hook will remind the user about unfinished workflow
+   steps (unpushed commits, missing pull requests, etc.) when they run git
+   commands that don't trigger a milestone hint. You don't need to duplicate
+   these reminders — the hook handles them automatically.
+
 2. Before committing, check the current branch with `git branch --show-current`.
    If the branch is 'main' or 'master', stop and ask the user to name a feature
    branch before continuing. Example: "We're on main — let's create a feature

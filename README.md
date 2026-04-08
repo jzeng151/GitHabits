@@ -158,6 +158,25 @@ Or for project-scoped installs:
 
 ---
 
+## Workflow nudges
+
+When you run a git command like `git status` or `git diff`, GitHabits checks if you have unfinished workflow steps and gently reminds you:
+
+| State | What it detects | Nudge |
+|-------|----------------|-------|
+| Unpushed commits | Commits on your feature branch that haven't been pushed | "You have N unpushed commits. Push with: git push origin branch" |
+| No pull request | Branch is on GitHub but has no PR | "Your branch is on GitHub but has no pull request yet." |
+| PR merged | PR was merged but branch still exists locally | "Your PR was merged! Time to clean up." |
+
+Nudges only fire when there's no milestone hint (they won't repeat what you just did). You'll be asked during install. To toggle anytime:
+
+```bash
+./setup.sh --workflow-nudge=off   # disable
+./setup.sh --workflow-nudge=on    # re-enable
+```
+
+---
+
 ## Uninstall
 
 Paste into Claude Code:
