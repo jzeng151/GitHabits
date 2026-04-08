@@ -150,7 +150,7 @@ Please uninstall GitHabits by running these steps:
 
 Or from a terminal:
 
-For global uninstal:
+For global uninstall:
 
 ```bash
 git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
