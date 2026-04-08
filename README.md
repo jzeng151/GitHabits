@@ -133,6 +133,31 @@ Or set it permanently in your shell environment. This completely bypasses the ho
 
 ---
 
+## Explanation scope
+
+Control how much Claude explains when running commands:
+
+| Scope | What gets explained |
+|-------|---------------------|
+| `all` | Every bash command |
+| `git` | Git commands only (default) |
+| `dev` | Git + npm, pip, curl, docker, chmod, mkdir, etc. |
+| `none` | No automatic explanations |
+
+You'll be asked during install. To change anytime without reinstalling:
+
+```bash
+./setup.sh --explain-scope=all
+```
+
+Or for project-scoped installs:
+
+```bash
+./setup.sh --project --explain-scope=dev
+```
+
+---
+
 ## Uninstall
 
 Paste into Claude Code:

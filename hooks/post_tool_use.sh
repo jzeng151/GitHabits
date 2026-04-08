@@ -17,7 +17,7 @@ fi
 STDIN=$(cat)
 
 # ── Fast path ─────────────────────────────────────────────────────────────────
-echo "$STDIN" | grep -q '"git ' || exit 0
+echo "$STDIN" | grep -q 'git ' || exit 0
 
 # ── Parse command from stdin JSON ─────────────────────────────────────────────
 # PostToolUse stdin: {"tool_name":"Bash","tool_input":{"command":"..."},"tool_response":...}
