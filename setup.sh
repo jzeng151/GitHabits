@@ -62,6 +62,7 @@ check_claude_version() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SRC="$SCRIPT_DIR/hooks/pre_tool_use.sh"
 POST_HOOK_SRC="$SCRIPT_DIR/hooks/post_tool_use.sh"
+LIB_SRC="$SCRIPT_DIR/lib/githabits.sh"
 CLAUDE_MD_SRC="$SCRIPT_DIR/templates/CLAUDE.md"
 MARKER_START="# GitHabits START"
 MARKER_END="# GitHabits END"
@@ -119,6 +120,7 @@ else
 fi
 
 HOOKS_DIR="$CLAUDE_DIR/hooks"
+LIB_DIR="$CLAUDE_DIR/lib"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 CLAUDE_MD_FILE="$CLAUDE_DIR/CLAUDE.md"
 HOOK_DEST="$HOOKS_DIR/pre_tool_use.sh"
@@ -180,6 +182,12 @@ if [ "$UNINSTALL" = true ]; then
   if [ -f "$CONFIG_FILE" ]; then
     rm -f "$CONFIG_FILE"
     success "Removed config: $CONFIG_FILE"
+  fi
+
+  # Remove shared library
+  if [ -d "$LIB_DIR" ]; then
+    rm -rf "$LIB_DIR"
+    success "Removed library: $LIB_DIR"
   fi
 
   # Remove hook scripts
@@ -292,6 +300,7 @@ fi
 
 # Create directories
 mkdir -p "$HOOKS_DIR"
+mkdir -p "$LIB_DIR"
 mkdir -p "$CLAUDE_DIR"
 
 # Write config file
@@ -310,6 +319,10 @@ success "Hook installed: $HOOK_DEST"
 cp "$POST_HOOK_SRC" "$POST_HOOK_DEST"
 chmod +x "$POST_HOOK_DEST"
 success "Hook installed: $POST_HOOK_DEST"
+
+# Install shared library
+cp "$LIB_SRC" "$LIB_DIR/githabits.sh"
+success "Library installed: $LIB_DIR/githabits.sh"
 
 # 2. Register hooks in settings.json
 # Registers both PreToolUse and PostToolUse (idempotent)

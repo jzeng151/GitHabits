@@ -11,6 +11,10 @@
 
 set -euo pipefail
 
+# ── Source shared library ────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/githabits.sh"
+
 # ── Override ──────────────────────────────────────────────────────────────────
 # Documented in README only — NOT in the block message.
 # Claude can read block messages and self-apply overrides.
@@ -28,24 +32,7 @@ STDIN=$(cat)
 echo "$STDIN" | grep -q 'git ' || exit 0
 
 # ── Parse command from stdin JSON ─────────────────────────────────────────────
-# stdin format: {"tool_name": "Bash", "tool_input": {"command": "..."}}
-# Pass STDIN as argument (not pipe) so heredoc can provide the Python script.
-CMD=""
-if command -v python3 >/dev/null 2>&1; then
-  CMD=$(python3 - "$STDIN" <<'PYEOF'
-import sys, json
-try:
-    data = json.loads(sys.argv[1])
-    print(data["tool_input"]["command"])
-except Exception:
-    pass
-PYEOF
-  ) || true
-elif command -v jq >/dev/null 2>&1; then
-  CMD=$(echo "$STDIN" | jq -r '.tool_input.command' 2>/dev/null) || true
-fi
-
-[ -z "$CMD" ] && exit 0
+parse_command "$STDIN" || exit 0
 
 # ── Build and emit a block ────────────────────────────────────────────────────
 # Writes tutor message to stderr (human-visible in Claude Code UI)
@@ -67,39 +54,13 @@ PYEOF
   exit 2
 }
 
-# ── Branch helpers ────────────────────────────────────────────────────────────
-current_branch() {
-  git branch --show-current 2>/dev/null || echo ""
-}
-
-is_main_branch() {
-  [ "$1" = "main" ] || [ "$1" = "master" ]
-}
-
+# ── Repo helpers (pre-hook specific) ──────────────────────────────────────────
 is_empty_repo() {
   ! git rev-parse HEAD >/dev/null 2>&1
 }
 
 # ── Split chained commands ────────────────────────────────────────────────────
-# Handles: git checkout main && git merge feature-branch
-# Splits on &&, ||, ; so each sub-command is evaluated independently.
-SUBCMDS=""
-if command -v python3 >/dev/null 2>&1; then
-  SUBCMDS=$(python3 - "$CMD" <<'PYEOF'
-import sys, re
-cmd = sys.argv[1]
-parts = re.split(r'&&|\|\||;', cmd)
-for p in parts:
-    p = p.strip()
-    if p:
-        print(p)
-PYEOF
-  ) || SUBCMDS="$CMD"
-else
-  SUBCMDS="$CMD"
-fi
-
-[ -z "$SUBCMDS" ] && SUBCMDS="$CMD"
+SUBCMDS=$(split_commands "$CMD")
 
 # ── Evaluate each sub-command ─────────────────────────────────────────────────
 BRANCH=$(current_branch)
