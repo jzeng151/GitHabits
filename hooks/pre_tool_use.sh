@@ -111,14 +111,16 @@ while IFS= read -r SUBCMD; do
     if echo "$SUBCMD" | grep -qE '(^|[[:space:]])git[[:space:]]+(commit|merge|push)'; then
       emit_block "Learning moment: you're in 'detached HEAD' state.
 
-This happens when you check out a specific old commit instead of a branch.
-Any commits you make here aren't attached to a branch — they can be lost.
+What this means: You went back in time to look at an older version of the
+code. Right now, you're not on any branch — you're floating. If you make
+changes here, they won't be saved to any branch and could be lost forever.
 
-How to get back on a branch:
-  git checkout main          # go back to main
-  git checkout -b feature/x  # or start a new feature branch here
+How to fix this:
+  git checkout main          # go back to the main branch
+  git checkout -b feature/x  # or create a new branch from this point
 
-I've paused the command. Want me to get you back on a branch first?"
+Think of a branch like a folder for your work. Right now your work has no
+folder. I've paused the command. Want me to get you back on a branch first?"
     fi
     continue
   fi
@@ -127,19 +129,24 @@ I've paused the command. Want me to get you back on a branch first?"
   if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+commit'; then
     # Allow the very first commit in an empty repo — there's no branch to create yet
     if is_main_branch "$BRANCH" && ! is_empty_repo; then
-      emit_block "Learning moment: you're about to commit directly to '$BRANCH'.
+      emit_block "Learning moment: you're about to save changes directly to '$BRANCH'.
 
-Senior engineers never do this — here's why: '$BRANCH' is the branch
-your teammates (and future-you) rely on being stable. One accidental
-commit can break everyone's work.
+'$BRANCH' is the main version of the code that everyone shares. Think of it
+like the 'official copy'. If you save changes directly here and something is
+wrong, it affects everyone.
 
-What to do instead:
-  git checkout -b feature/your-feature-name   # creates a safe branch
-  git add .
-  git commit -m \"describe what you changed\"
-  git push origin feature/your-feature-name
+The safe way to work is to create a 'feature branch' first — it's like making
+your own copy where you can work freely without affecting anyone else:
 
-I've paused the command. Want me to create that branch for you?"
+  Step 1: git checkout -b feature/your-feature-name   (create your own copy)
+  Step 2: git add .                                    (select your changes)
+  Step 3: git commit -m \"describe what you changed\"   (save a checkpoint)
+  Step 4: git push origin feature/your-feature-name    (upload to GitHub)
+
+After uploading, you'll create a 'pull request' on GitHub — that's how you
+ask to add your changes to the official copy after review.
+
+I've paused the command. Want me to create a feature branch for you?"
     fi
   fi
 
@@ -148,14 +155,15 @@ I've paused the command. Want me to create that branch for you?"
     if is_main_branch "$BRANCH"; then
       emit_block "Learning moment: you're about to cherry-pick a commit directly onto '$BRANCH'.
 
-Cherry-picking creates a new commit on '$BRANCH'. That's the same as
-committing directly to '$BRANCH' — it changes the branch everyone
-relies on being stable.
+'Cherry-pick' copies a specific change and applies it as a new save. You're
+about to apply it directly to '$BRANCH' — the official copy everyone shares.
+Even though you're copying an existing change, this still modifies '$BRANCH'.
 
-What to do instead:
-  git checkout -b feature/your-feature-name   # create a safe branch first
-  git cherry-pick <commit>                    # cherry-pick onto the branch
-  git push origin feature/your-feature-name   # push and open a PR
+The safe way:
+  Step 1: git checkout -b feature/your-feature-name   (create your own copy)
+  Step 2: git cherry-pick <commit>                     (apply the change there)
+  Step 3: git push origin feature/your-feature-name    (upload to GitHub)
+  Step 4: Create a pull request on GitHub               (ask to merge it in)
 
 I've paused the command. Want me to create a feature branch first?"
     fi
@@ -166,13 +174,15 @@ I've paused the command. Want me to create a feature branch first?"
     if is_main_branch "$BRANCH"; then
       emit_block "Learning moment: you're about to revert a commit directly on '$BRANCH'.
 
-A revert creates a new commit that undoes a previous change. Even though
-you're undoing something, it's still a commit directly to '$BRANCH'.
+'Revert' undoes a previous change by creating a new save that cancels it out.
+Even though you're undoing something, this still adds a new change directly to
+'$BRANCH' — the official copy everyone shares.
 
-What to do instead:
-  git checkout -b fix/revert-description      # create a branch for the revert
-  git revert <commit>                         # revert on the branch
-  git push origin fix/revert-description      # push and open a PR
+The safe way:
+  Step 1: git checkout -b fix/revert-description      (create your own copy)
+  Step 2: git revert <commit>                          (undo the change there)
+  Step 3: git push origin fix/revert-description       (upload to GitHub)
+  Step 4: Create a pull request on GitHub               (ask to merge it in)
 
 I've paused the command. Want me to create a branch for this revert?"
     fi
@@ -184,27 +194,31 @@ I've paused the command. Want me to create a branch for this revert?"
     # ── Destructive: delete remote main ────────────────────────────────
     # git push origin --delete main / git push origin :main
     if echo "$SUBCMD" | grep -qE '(--delete[[:space:]]+(main|master)|[[:space:]]:(main|master))([[:space:]]|$)'; then
-      emit_block "Learning moment: you're about to DELETE the remote '$BRANCH' branch.
+      emit_block "Learning moment: you're about to DELETE the main branch from GitHub.
 
-This would remove '$BRANCH' from GitHub entirely. Everyone who depends
-on it would lose access. This is almost never what you want.
+This would completely remove the official copy of the code from GitHub.
+Everyone who depends on it would lose access. This is almost certainly
+not what you want — it's one of the most destructive things you can do.
 
-I've paused the command. If you're trying to clean up, you probably
-want to delete a feature branch instead:
-  git push origin --delete feature/your-feature-name"
+If you're trying to clean up after finishing a feature, you probably want
+to delete your feature branch instead:
+  git push origin --delete feature/your-feature-name
+
+I've paused the command. Can you tell me what you're trying to do?"
     fi
 
     # ── Dangerous: push --all / push --mirror ──────────────────────────
     if echo "$SUBCMD" | grep -qE '[[:space:]]--(all|mirror)([[:space:]]|$)'; then
-      emit_block "Learning moment: you're about to push ALL branches to the remote.
+      emit_block "Learning moment: you're about to upload ALL branches to GitHub at once.
 
-This includes '$BRANCH' and every other branch. It's a bulk operation
-that's rarely what you want, especially with protected branches.
+This sends every branch — including the main branch — to GitHub. It's a bulk
+operation that's almost never what you want. You should only upload the specific
+branch you're working on.
 
-Better practice:
-  git push origin feature/your-feature-name   # push just your feature branch
+The safe way:
+  git push origin feature/your-feature-name   (upload just your feature branch)
 
-I've paused the command. Want me to push only your feature branch?"
+I've paused the command. Want me to push only your feature branch instead?"
     fi
 
     TARGET=""
@@ -243,26 +257,33 @@ I've paused the command. Want me to push only your feature branch?"
       if [ "$IS_FORCE" = true ]; then
         emit_block "Learning moment: you're about to FORCE PUSH to '$TARGET'.
 
-This is one of the most dangerous git operations. Force pushing to
-'$TARGET' rewrites the remote history. It can destroy other people's
-commits and break everyone's local copies.
+This is one of the most dangerous things you can do in Git. Force pushing
+to '$TARGET' replaces the version on GitHub with your version. If anyone
+else made changes, those changes will be permanently deleted.
 
-Even experienced engineers avoid this. If you need to fix something
-on '$TARGET', the safe way is:
-  1. Create a fix branch
-  2. Push the fix branch
-  3. Open a PR
+Think of it like overwriting a shared document without checking if anyone
+else edited it. Even experienced engineers avoid this on '$TARGET'.
+
+If you need to fix something, the safe way is:
+  Step 1: git checkout -b fix/your-fix-name          (create your own copy)
+  Step 2: Make your changes and commit them
+  Step 3: git push origin fix/your-fix-name           (upload to GitHub)
+  Step 4: Create a pull request on GitHub              (ask to merge it in)
 
 I've paused the command. Want me to help you fix this safely?"
       else
-        emit_block "Learning moment: you're about to push directly to '$TARGET'.
+        emit_block "Learning moment: you're about to upload changes directly to '$TARGET'.
 
-Pushing to '$TARGET' shares your work with everyone immediately.
-If something is broken, it affects everyone.
+'$TARGET' is the official copy of the code on GitHub. When you push
+(upload) to '$TARGET', your changes go live immediately for everyone.
+If something is wrong, it affects the whole team.
 
-Better practice:
-  git push origin feature/your-feature-name
-  # Then open a pull request on GitHub to review before merging into $TARGET
+The safe way to share your work:
+  Step 1: git push origin feature/your-feature-name   (upload your branch)
+  Step 2: Go to GitHub and create a 'pull request'     (ask to merge it in)
+  Step 3: Review the changes, then click 'Merge'       (add to official copy)
+
+A pull request lets you (or your team) review changes before they go live.
 
 I've paused the push. Want me to push to a feature branch instead?"
       fi
@@ -272,16 +293,22 @@ I've paused the push. Want me to push to a feature branch instead?"
   # ── git merge into main/master ───────────────────────────────────────────
   if echo "$SUBCMD" | grep -qE '^[[:space:]]*git[[:space:]]+merge'; then
     if is_main_branch "$BRANCH"; then
-      emit_block "Learning moment: you're about to merge directly into '$BRANCH'.
+      emit_block "Learning moment: you're about to merge changes directly into '$BRANCH'.
 
-Direct merges to '$BRANCH' skip the review step. The standard workflow is:
+'Merge' combines changes from one branch into another. You're about to add
+changes directly into '$BRANCH' — the official copy — without going through
+a review step. If something is wrong, it goes live immediately.
 
-  1. Push your feature branch:  git push origin feature/your-feature-name
-  2. Open a pull request on GitHub
-  3. Review the changes
-  4. Merge the PR on GitHub
+The safe way to merge:
+  Step 1: git push origin feature/your-feature-name   (upload your branch)
+  Step 2: Go to your repo on GitHub
+  Step 3: Click 'Compare & pull request'               (create a pull request)
+  Step 4: Review your changes on the pull request page
+  Step 5: Click 'Merge pull request', then 'Confirm merge'
 
-I've paused the merge. Want me to push your branch and open a PR instead?"
+This way you can see exactly what will change before it goes into '$BRANCH'.
+
+I've paused the merge. Want me to push your branch and create a PR instead?"
     fi
   fi
 
@@ -293,19 +320,22 @@ I've paused the merge. Want me to push your branch and open a PR instead?"
       if echo "$SUBCMD" | grep -qE 'git[[:space:]]+pull[[:space:]]+\S+[[:space:]]+\S+'; then
         PULL_BRANCH=$(echo "$SUBCMD" | grep -oE 'git[[:space:]]+pull[[:space:]]+\S+[[:space:]]+(\S+)' | awk '{print $NF}')
         if [ -n "$PULL_BRANCH" ] && ! is_main_branch "$PULL_BRANCH"; then
-          emit_block "Learning moment: you're about to pull '$PULL_BRANCH' into '$BRANCH'.
+          emit_block "Learning moment: you're about to pull '$PULL_BRANCH' directly into '$BRANCH'.
 
-'git pull origin $PULL_BRANCH' fetches that branch and merges it directly
-into '$BRANCH'. That's the same as merging without a pull request — it
-skips code review.
+This command downloads the '$PULL_BRANCH' branch and immediately combines it
+into '$BRANCH' — the official copy. This skips the review step, so if anything
+is wrong in '$PULL_BRANCH', it goes directly into the official code.
 
-The standard workflow is:
-  1. Push your feature branch:  git push origin $PULL_BRANCH
-  2. Open a pull request on GitHub
-  3. Review the changes
-  4. Merge the PR on GitHub
+The safe way to combine branches:
+  Step 1: git push origin $PULL_BRANCH                 (upload the branch)
+  Step 2: Go to your repo on GitHub
+  Step 3: Click 'Compare & pull request'               (create a pull request)
+  Step 4: Review the changes on the pull request page
+  Step 5: Click 'Merge pull request', then 'Confirm merge'
 
-I've paused the command. Want me to push the branch and open a PR instead?"
+This lets you review what will change before it goes into '$BRANCH'.
+
+I've paused the command. Want me to push the branch and create a PR instead?"
         fi
       fi
     fi
