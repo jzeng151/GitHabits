@@ -55,10 +55,19 @@ Claude will ask you global vs. project, run the installer, and clean up after it
 
 ### Option B — Terminal
 
+For global install:
+
 ```bash
 git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
-bash /tmp/githabits/setup.sh        # global
-bash /tmp/githabits/setup.sh --project     # or project scope only
+bash /tmp/githabits/setup.sh
+rm -rf /tmp/githabits
+```
+
+For project scope install:
+
+```bash
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --project
 rm -rf /tmp/githabits
 ```
 
@@ -141,10 +150,19 @@ Please uninstall GitHabits by running these steps:
 
 Or from a terminal:
 
+For global uninstal:
+
 ```bash
 git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
-bash /tmp/githabits/setup.sh --uninstall        # global
-bash /tmp/githabits/setup.sh --project --uninstall # or project scope only
+bash /tmp/githabits/setup.sh --uninstall
+rm -rf /tmp/githabits
+```
+
+For project scope uninstall:
+
+```bash
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --project --uninstall
 rm -rf /tmp/githabits
 ```
 
