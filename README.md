@@ -68,15 +68,17 @@ That's it. Open any project in Claude Code and start working.
 
 ## What gets installed
 
-- `~/.claude/hooks/pre_tool_use.sh` — intercepts git commands before they run
-- `~/.claude/settings.json` — registers the hook with Claude Code
-- `~/.claude/CLAUDE.md` — injects three pedagogy rules into Claude's instructions
+- `~/.claude/hooks/pre_tool_use.sh` — blocks dangerous git operations before they run
+- `~/.claude/hooks/post_tool_use.sh` — suggests the next step after each git milestone
+- `~/.claude/settings.json` — registers both hooks with Claude Code
+- `~/.claude/CLAUDE.md` — injects pedagogy rules into Claude's instructions
 
-The three rules Claude follows after install:
+After install, Claude will:
 
 1. Explain every git command in plain English before running it
 2. Check the current branch before committing — if it's `main`, ask you to name a feature branch first
-3. After every push, give a one-sentence description of what the git history looks like now
+3. After every push, give a one-sentence description of what the git history looks like
+4. After each git milestone, suggest the next step in the workflow
 
 ---
 
@@ -86,10 +88,27 @@ The three rules Claude follows after install:
 |---------|----------|
 | `git commit` on `main`/`master` | Blocked with tutor message |
 | `git push origin main` | Blocked with tutor message |
+| `git push origin HEAD` on `main` | Blocked with tutor message |
 | `git push` while tracking `main` | Blocked with tutor message |
 | `git merge` into `main`/`master` | Blocked with tutor message |
 | `git commit` in detached HEAD state | Blocked with tutor message |
 | Everything else | Allowed through |
+
+---
+
+## What it suggests
+
+After each git milestone, Claude suggests the next step in plain English:
+
+| After this... | Claude suggests... |
+|---|---|
+| `git checkout -b feature/x` | "You're on a safe branch. Start making changes." |
+| `git commit` on a feature branch | "Push to GitHub, then open a pull request." |
+| `git push origin feature/x` | "Open a pull request on GitHub." |
+| `git branch -d feature/x` | "Pull latest main, start your next feature." |
+| `git pull` on `main` | "Create a feature branch for your next task." |
+
+This teaches the full branching workflow as a loop: **branch → commit → push → PR → cleanup → repeat**.
 
 ---
 
@@ -135,12 +154,14 @@ This removes the hook script, unregisters it from `settings.json`, and removes t
 
 ## How it works
 
-GitHabits uses Claude Code's [PreToolUse hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) to intercept every Bash tool call before it executes. When it detects a git write operation targeting `main`, it:
+GitHabits uses two Claude Code hooks:
+
+**PreToolUse** (`pre_tool_use.sh`) fires before every Bash command. When it detects a git write operation targeting `main`, it:
 
 1. Writes a tutor-voice message to **stderr** — shown immediately in the Claude Code UI
-2. Outputs `{"decision": "block", "reason": "..."}` to **stdout** — Claude reads this and elaborates in its response
+2. Outputs `{"decision": "block", "reason": "..."}` to **stdout** — Claude reads this and elaborates
 3. Exits with code `2` — blocks the command
 
-You get two teaching moments: the hook notification in the UI, and Claude's response.
+**PostToolUse** (`post_tool_use.sh`) fires after every Bash command. When it detects a completed git milestone, it outputs a structured hint that Claude rephrases in its own voice — guiding the user to the next step in the workflow.
 
 For the full technical design, see [ARCHITECTURE.md](ARCHITECTURE.md).
