@@ -133,6 +133,30 @@ Or set it permanently in your shell environment. This completely bypasses the ho
 
 ---
 
+## Changing settings
+
+You can change GitHabits settings anytime after install. Just ask Claude:
+
+```
+"Turn off command explanations"
+"Set explanation scope to git only"
+"Disable workflow nudges"
+"Turn nudges back on"
+```
+
+Claude will edit the config file (`~/.claude/githabits.conf`) for you.
+
+If you prefer the terminal, you'll need the setup script (it's deleted after install, so clone again first):
+
+```bash
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --explain-scope=all
+bash /tmp/githabits/setup.sh --workflow-nudge=off
+rm -rf /tmp/githabits
+```
+
+---
+
 ## Explanation scope
 
 Control how much Claude explains when running commands:
@@ -144,17 +168,7 @@ Control how much Claude explains when running commands:
 | `dev` | Git + npm, pip, curl, docker, chmod, mkdir, etc. |
 | `none` | No automatic explanations |
 
-You'll be asked during install. To change anytime without reinstalling:
-
-```bash
-./setup.sh --explain-scope=all
-```
-
-Or for project-scoped installs:
-
-```bash
-./setup.sh --project --explain-scope=dev
-```
+You'll be asked during install.
 
 ---
 
@@ -168,12 +182,7 @@ When you run a git command like `git status` or `git diff`, GitHabits checks if 
 | No pull request | Branch is on GitHub but has no PR | "Your branch is on GitHub but has no pull request yet." |
 | PR merged | PR was merged but branch still exists locally | "Your PR was merged! Time to clean up." |
 
-Nudges only fire when there's no milestone hint (they won't repeat what you just did). You'll be asked during install. To toggle anytime:
-
-```bash
-./setup.sh --workflow-nudge=off   # disable
-./setup.sh --workflow-nudge=on    # re-enable
-```
+Nudges only fire when there's no milestone hint (they won't repeat what you just did). You'll be asked during install.
 
 ---
 

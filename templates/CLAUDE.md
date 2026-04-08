@@ -67,4 +67,12 @@
    After deleting a feature branch and pulling main:
    "You're up to date on main. Ready to start the next feature? Just tell me
    what you're building next and I'll create a branch for it."
+
+5. If the user asks to change GitHabits settings (explanation scope, workflow
+   nudges, etc.), edit the config file at ~/.claude/githabits.conf (or
+   .claude/githabits.conf for project installs) directly. Valid settings:
+     EXPLAIN_SCOPE=all|git|dev|none
+     WORKFLOW_NUDGE=on|off
+   Confirm the change after editing. Example: "Done — explanation scope is
+   now set to 'git'. I'll only explain git commands from now on."
 # GitHabits END
