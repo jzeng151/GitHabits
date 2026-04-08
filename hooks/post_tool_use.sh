@@ -8,20 +8,17 @@
 
 set -euo pipefail
 
+# ── Source shared library ────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/githabits.sh"
+
 # ── Override ──────────────────────────────────────────────────────────────────
 if [ "${GITHABITS_QUIET:-}" = "1" ]; then
   exit 0
 fi
 
 # ── Read config ──────────────────────────────────────────────────────────────
-WORKFLOW_NUDGE="on"
-for conf in ".claude/githabits.conf" "$HOME/.claude/githabits.conf"; do
-  if [ -f "$conf" ]; then
-    val=$(grep -E '^WORKFLOW_NUDGE=' "$conf" 2>/dev/null | tail -1 | cut -d= -f2)
-    [ -n "$val" ] && WORKFLOW_NUDGE="$val"
-    break
-  fi
-done
+WORKFLOW_NUDGE=$(read_config "WORKFLOW_NUDGE" "on")
 
 # ── Read stdin ────────────────────────────────────────────────────────────────
 STDIN=$(cat)
@@ -30,33 +27,7 @@ STDIN=$(cat)
 echo "$STDIN" | grep -q 'git ' || exit 0
 
 # ── Parse command from stdin JSON ─────────────────────────────────────────────
-# PostToolUse stdin: {"tool_name":"Bash","tool_input":{"command":"..."},"tool_response":...}
-CMD=""
-TOOL_OUTPUT=""
-if command -v python3 >/dev/null 2>&1; then
-  eval "$(python3 - "$STDIN" <<'PYEOF'
-import sys, json, shlex
-try:
-    data = json.loads(sys.argv[1])
-    cmd = data["tool_input"]["command"]
-    # tool_response can be a dict with "output" or a string
-    resp = data.get("tool_response", {})
-    if isinstance(resp, dict):
-        output = resp.get("output", resp.get("stdout", ""))
-    else:
-        output = str(resp) if resp else ""
-    print("CMD=%s" % shlex.quote(cmd))
-    print("TOOL_OUTPUT=%s" % shlex.quote(output))
-except Exception:
-    pass
-PYEOF
-  )" || true
-elif command -v jq >/dev/null 2>&1; then
-  CMD=$(echo "$STDIN" | jq -r '.tool_input.command' 2>/dev/null) || true
-  TOOL_OUTPUT=$(echo "$STDIN" | jq -r '.tool_response.output // .tool_response // ""' 2>/dev/null) || true
-fi
-
-[ -z "$CMD" ] && exit 0
+parse_command_and_output "$STDIN" || exit 0
 
 # ── Detect failed commands ────────────────────────────────────────────────
 # Don't suggest next steps if the command failed
@@ -81,15 +52,6 @@ PYEOF
     printf '{"additionalContext":"GITHABITS: %s"}' "$escaped"
   fi
   exit 0
-}
-
-# ── Branch helpers ────────────────────────────────────────────────────────────
-current_branch() {
-  git branch --show-current 2>/dev/null || echo ""
-}
-
-is_main_branch() {
-  [ "$1" = "main" ] || [ "$1" = "master" ]
 }
 
 # ── Workflow nudge ───────────────────────────────────────────────────────────
@@ -156,23 +118,7 @@ check_workflow_nudge() {
 # ── Split chained commands and find the last significant git operation ────────
 # For "git add . && git commit -m 'fix'", the significant operation is commit.
 # Priority (highest first): push > commit > checkout -b / switch -c > branch -d > pull/fetch
-SUBCMDS=""
-if command -v python3 >/dev/null 2>&1; then
-  SUBCMDS=$(python3 - "$CMD" <<'PYEOF'
-import sys, re
-cmd = sys.argv[1]
-parts = re.split(r'&&|\|\||;', cmd)
-for p in parts:
-    p = p.strip()
-    if p:
-        print(p)
-PYEOF
-  ) || SUBCMDS="$CMD"
-else
-  SUBCMDS="$CMD"
-fi
-
-[ -z "$SUBCMDS" ] && SUBCMDS="$CMD"
+SUBCMDS=$(split_commands "$CMD")
 
 # Find the last significant git operation in the chain
 LAST_OP=""
