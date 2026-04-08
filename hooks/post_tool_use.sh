@@ -22,21 +22,39 @@ echo "$STDIN" | grep -q '"git ' || exit 0
 # ── Parse command from stdin JSON ─────────────────────────────────────────────
 # PostToolUse stdin: {"tool_name":"Bash","tool_input":{"command":"..."},"tool_response":...}
 CMD=""
+TOOL_OUTPUT=""
 if command -v python3 >/dev/null 2>&1; then
-  CMD=$(python3 - "$STDIN" <<'PYEOF'
-import sys, json
+  eval "$(python3 - "$STDIN" <<'PYEOF'
+import sys, json, shlex
 try:
     data = json.loads(sys.argv[1])
-    print(data["tool_input"]["command"])
+    cmd = data["tool_input"]["command"]
+    # tool_response can be a dict with "output" or a string
+    resp = data.get("tool_response", {})
+    if isinstance(resp, dict):
+        output = resp.get("output", resp.get("stdout", ""))
+    else:
+        output = str(resp) if resp else ""
+    print("CMD=%s" % shlex.quote(cmd))
+    print("TOOL_OUTPUT=%s" % shlex.quote(output))
 except Exception:
     pass
 PYEOF
-  ) || true
+  )" || true
 elif command -v jq >/dev/null 2>&1; then
   CMD=$(echo "$STDIN" | jq -r '.tool_input.command' 2>/dev/null) || true
+  TOOL_OUTPUT=$(echo "$STDIN" | jq -r '.tool_response.output // .tool_response // ""' 2>/dev/null) || true
 fi
 
 [ -z "$CMD" ] && exit 0
+
+# ── Detect failed commands ────────────────────────────────────────────────
+# Don't suggest next steps if the command failed
+if [ -n "$TOOL_OUTPUT" ]; then
+  if echo "$TOOL_OUTPUT" | grep -qiE '(fatal:|error:|rejected|failed|denied|not found|could not)'; then
+    exit 0
+  fi
+fi
 
 # ── Emit a workflow hint ──────────────────────────────────────────────────────
 # Outputs JSON to stdout only. Claude reads additionalContext and rephrases.
@@ -132,13 +150,31 @@ case "$LAST_OP" in
 
   commit)
     if [ -n "$BRANCH" ] && ! is_main_branch "$BRANCH"; then
-      emit_hint "User just committed to feature branch '$BRANCH'. Suggest they push to GitHub with 'git push origin $BRANCH' and then open a pull request to merge into main."
+      # Check if this was an amend — needs force push if already pushed
+      if echo "$LAST_SUBCMD" | grep -qE '(--amend)'; then
+        emit_hint "User just amended a commit on feature branch '$BRANCH'. If this branch was already pushed to GitHub, they'll need to force push with 'git push --force-with-lease origin $BRANCH'. Explain that --force-with-lease is safer than --force because it checks that no one else has pushed to the branch."
+      else
+        emit_hint "User just committed to feature branch '$BRANCH'. Suggest they push to GitHub with 'git push origin $BRANCH' and then open a pull request to merge into main."
+      fi
     fi
     ;;
 
   push)
     if [ -n "$BRANCH" ] && ! is_main_branch "$BRANCH"; then
-      emit_hint "User just pushed feature branch '$BRANCH' to GitHub. Suggest they open a pull request to get their changes reviewed and merged into main. They can go to their repo on GitHub and click 'Compare & pull request', or use 'gh pr create' from the terminal."
+      # Check if a PR already exists for this branch (using gh if available)
+      PR_EXISTS=false
+      if command -v gh >/dev/null 2>&1; then
+        PR_URL=$(gh pr view "$BRANCH" --json url --jq '.url' 2>/dev/null) || true
+        if [ -n "$PR_URL" ]; then
+          PR_EXISTS=true
+        fi
+      fi
+
+      if [ "$PR_EXISTS" = true ]; then
+        emit_hint "User just pushed updates to feature branch '$BRANCH'. A pull request already exists at $PR_URL. Their latest changes are now visible in the PR. If the changes are ready, the PR can be reviewed and merged."
+      else
+        emit_hint "User just pushed feature branch '$BRANCH' to GitHub. Suggest they open a pull request to get their changes reviewed and merged into main. They can go to their repo on GitHub and click 'Compare & pull request', or use 'gh pr create' from the terminal."
+      fi
     fi
     ;;
 
