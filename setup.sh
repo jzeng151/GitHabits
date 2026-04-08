@@ -82,6 +82,7 @@ error()   { echo -e "${RED}✗${RESET} $*" >&2; }
 MODE="global"
 UNINSTALL=false
 EXPLAIN_SCOPE=""
+WORKFLOW_NUDGE=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -90,14 +91,20 @@ for arg in "$@"; do
     --explain-scope=*)
       EXPLAIN_SCOPE="${arg#*=}"
       ;;
+    --workflow-nudge=*)
+      WORKFLOW_NUDGE="${arg#*=}"
+      ;;
     --help|-h)
       echo "Usage: ./setup.sh [--project] [--uninstall] [--explain-scope=SCOPE]"
+      echo "                  [--workflow-nudge=on|off]"
       echo ""
-      echo "  (no flag)              Install globally in ~/.claude/"
-      echo "  --project              Install in .claude/ (this project only)"
-      echo "  --uninstall            Remove all GitHabits files and config"
-      echo "  --explain-scope=SCOPE  Set explanation scope: all, git, dev, none"
-      echo "                         Can be used standalone to change scope after install"
+      echo "  (no flag)                Install globally in ~/.claude/"
+      echo "  --project                Install in .claude/ (this project only)"
+      echo "  --uninstall              Remove all GitHabits files and config"
+      echo "  --explain-scope=SCOPE    Set explanation scope: all, git, dev, none"
+      echo "  --workflow-nudge=on|off  Toggle workflow reminders"
+      echo ""
+      echo "  Flags can be used standalone to change settings after install."
       exit 0
       ;;
     *) error "Unknown argument: $arg"; exit 1 ;;
@@ -118,16 +125,43 @@ HOOK_DEST="$HOOKS_DIR/pre_tool_use.sh"
 POST_HOOK_DEST="$HOOKS_DIR/post_tool_use.sh"
 CONFIG_FILE="$CLAUDE_DIR/githabits.conf"
 
-# ── Scope-only mode ──────────────────────────────────────────────────────────
-# Allow changing scope without a full reinstall
-if [ -n "$EXPLAIN_SCOPE" ] && [ "$UNINSTALL" = false ]; then
-  case "$EXPLAIN_SCOPE" in
-    all|git|dev|none) ;;
-    *) error "Invalid scope: $EXPLAIN_SCOPE. Use: all, git, dev, none"; exit 1 ;;
-  esac
+# ── Config helper ─────────────────────────────────────────────────────────────
+# Update a single key in githabits.conf without clobbering other values.
+update_config() {
+  local key="$1" value="$2"
   mkdir -p "$CLAUDE_DIR"
-  echo "EXPLAIN_SCOPE=$EXPLAIN_SCOPE" > "$CONFIG_FILE"
-  success "Explanation scope set to: $EXPLAIN_SCOPE"
+  if [ -f "$CONFIG_FILE" ]; then
+    grep -v "^${key}=" "$CONFIG_FILE" > "$CONFIG_FILE.tmp" 2>/dev/null || true
+    mv "$CONFIG_FILE.tmp" "$CONFIG_FILE"
+  fi
+  echo "${key}=${value}" >> "$CONFIG_FILE"
+}
+
+# ── Standalone config mode ───────────────────────────────────────────────────
+# Allow changing settings without a full reinstall.
+if [ "$UNINSTALL" = false ] && { [ -n "$EXPLAIN_SCOPE" ] || [ -n "$WORKFLOW_NUDGE" ]; }; then
+  STANDALONE=true
+
+  if [ -n "$EXPLAIN_SCOPE" ]; then
+    case "$EXPLAIN_SCOPE" in
+      all|git|dev|none) ;;
+      *) error "Invalid scope: $EXPLAIN_SCOPE. Use: all, git, dev, none"; exit 1 ;;
+    esac
+    update_config "EXPLAIN_SCOPE" "$EXPLAIN_SCOPE"
+    success "Explanation scope set to: $EXPLAIN_SCOPE"
+    STANDALONE=false  # we handled it
+  fi
+
+  if [ -n "$WORKFLOW_NUDGE" ]; then
+    case "$WORKFLOW_NUDGE" in
+      on|off) ;;
+      *) error "Invalid value: $WORKFLOW_NUDGE. Use: on, off"; exit 1 ;;
+    esac
+    update_config "WORKFLOW_NUDGE" "$WORKFLOW_NUDGE"
+    success "Workflow nudge set to: $WORKFLOW_NUDGE"
+    STANDALONE=false
+  fi
+
   exit 0
 fi
 
@@ -240,13 +274,33 @@ if [ -z "$EXPLAIN_SCOPE" ]; then
   echo ""
 fi
 
+# Ask about workflow nudges (unless already set via flag)
+if [ -z "$WORKFLOW_NUDGE" ]; then
+  echo "Should Claude remind you about unfinished workflow steps?"
+  echo ""
+  echo "  1) On   — gentle reminders about unpushed commits, missing PRs (recommended)"
+  echo "  2) Off  — no workflow reminders"
+  echo ""
+  printf "  Choose [1-2, default: 1]: "
+  read -r NUDGE_CHOICE
+  case "$NUDGE_CHOICE" in
+    2) WORKFLOW_NUDGE="off" ;;
+    *) WORKFLOW_NUDGE="on" ;;
+  esac
+  echo ""
+fi
+
 # Create directories
 mkdir -p "$HOOKS_DIR"
 mkdir -p "$CLAUDE_DIR"
 
 # Write config file
-echo "EXPLAIN_SCOPE=$EXPLAIN_SCOPE" > "$CONFIG_FILE"
+cat > "$CONFIG_FILE" <<EOF
+EXPLAIN_SCOPE=$EXPLAIN_SCOPE
+WORKFLOW_NUDGE=$WORKFLOW_NUDGE
+EOF
 success "Explanation scope: $EXPLAIN_SCOPE"
+success "Workflow nudge: $WORKFLOW_NUDGE"
 
 # 1. Install hook scripts
 cp "$HOOK_SRC" "$HOOK_DEST"
@@ -328,8 +382,11 @@ echo "  • Claude explains commands before running them (scope: $EXPLAIN_SCOPE)
 echo "  • Committing or pushing to main/master is blocked with a tutorial"
 echo "  • You'll be guided to create a feature branch instead"
 echo "  • After each git milestone, Claude suggests the next step in the workflow"
+echo "  • Workflow nudges remind you about unfinished steps (nudge: $WORKFLOW_NUDGE)"
 echo ""
-echo "To change explanation scope:  ./setup.sh --explain-scope=all|git|dev|none"
+echo "To change settings after install:"
+echo "  ./setup.sh --explain-scope=all|git|dev|none"
+echo "  ./setup.sh --workflow-nudge=on|off"
 echo "To uninstall:  ./setup.sh --uninstall"
 echo "To override (solo project):  GITHABITS_ALLOW_MAIN=1 (see README)"
 echo ""

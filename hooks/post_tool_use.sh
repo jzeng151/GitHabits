@@ -13,6 +13,16 @@ if [ "${GITHABITS_QUIET:-}" = "1" ]; then
   exit 0
 fi
 
+# ── Read config ──────────────────────────────────────────────────────────────
+WORKFLOW_NUDGE="on"
+for conf in ".claude/githabits.conf" "$HOME/.claude/githabits.conf"; do
+  if [ -f "$conf" ]; then
+    val=$(grep -E '^WORKFLOW_NUDGE=' "$conf" 2>/dev/null | tail -1 | cut -d= -f2)
+    [ -n "$val" ] && WORKFLOW_NUDGE="$val"
+    break
+  fi
+done
+
 # ── Read stdin ────────────────────────────────────────────────────────────────
 STDIN=$(cat)
 
@@ -82,6 +92,67 @@ is_main_branch() {
   [ "$1" = "main" ] || [ "$1" = "master" ]
 }
 
+# ── Workflow nudge ───────────────────────────────────────────────────────────
+# Checks git state for unfinished workflow steps. Only called when no milestone
+# hint fires (e.g., user ran git status, git log, git diff, git add).
+check_workflow_nudge() {
+  local branch
+  branch=$(current_branch)
+  [ -z "$branch" ] && return
+  is_main_branch "$branch" && return
+
+  # Priority 1: PR merged but branch not cleaned up
+  if command -v gh >/dev/null 2>&1; then
+    local pr_state
+    pr_state=$(gh pr view "$branch" --json state --jq '.state' 2>/dev/null) || true
+    if [ "$pr_state" = "MERGED" ]; then
+      emit_hint "Workflow reminder: the pull request for '$branch' was already merged! Time to clean up: switch to main, delete this branch, and pull the latest code. Steps: git checkout main && git pull && git branch -d $branch"
+    fi
+  fi
+
+  # Priority 2: Unpushed commits
+  local unpushed=""
+  # Try upstream tracking first (fast, local)
+  unpushed=$(git log @{upstream}..HEAD --oneline 2>/dev/null) || true
+  if [ -z "$unpushed" ]; then
+    # No upstream — check if remote branch exists
+    local remote_exists
+    remote_exists=$(git ls-remote --heads origin "$branch" 2>/dev/null) || true
+    if [ -z "$remote_exists" ]; then
+      # No remote branch — check commits beyond remote main, then local main
+      unpushed=$(git log origin/main..HEAD --oneline 2>/dev/null) || true
+      if [ -z "$unpushed" ]; then
+        unpushed=$(git log origin/master..HEAD --oneline 2>/dev/null) || true
+      fi
+      if [ -z "$unpushed" ]; then
+        # No remote at all — fall back to local main/master
+        unpushed=$(git log main..HEAD --oneline 2>/dev/null) || true
+      fi
+      if [ -z "$unpushed" ]; then
+        unpushed=$(git log master..HEAD --oneline 2>/dev/null) || true
+      fi
+    fi
+  fi
+  if [ -n "$unpushed" ]; then
+    local count
+    count=$(echo "$unpushed" | wc -l | tr -d ' ')
+    emit_hint "Workflow reminder: you have $count unpushed commit(s) on '$branch'. When you're ready, upload them to GitHub: git push origin $branch"
+  fi
+
+  # Priority 3: Pushed but no PR
+  if command -v gh >/dev/null 2>&1; then
+    local remote_exists
+    remote_exists=$(git ls-remote --heads origin "$branch" 2>/dev/null) || true
+    if [ -n "$remote_exists" ]; then
+      local pr_url
+      pr_url=$(gh pr view "$branch" --json url --jq '.url' 2>/dev/null) || true
+      if [ -z "$pr_url" ]; then
+        emit_hint "Workflow reminder: your branch '$branch' is on GitHub but doesn't have a pull request yet. Create one so your changes can be reviewed and merged into main."
+      fi
+    fi
+  fi
+}
+
 # ── Split chained commands and find the last significant git operation ────────
 # For "git add . && git commit -m 'fix'", the significant operation is commit.
 # Priority (highest first): push > commit > checkout -b / switch -c > branch -d > pull/fetch
@@ -136,7 +207,14 @@ while IFS= read -r SUBCMD; do
   fi
 done <<< "$SUBCMDS"
 
-[ -z "$LAST_OP" ] && exit 0
+# ── Nudge fallback ───────────────────────────────────────────────────────────
+# No milestone operation detected — check for unfinished workflow state.
+if [ -z "$LAST_OP" ]; then
+  if [ "$WORKFLOW_NUDGE" = "on" ]; then
+    check_workflow_nudge
+  fi
+  exit 0
+fi
 
 # ── Emit hint based on operation + branch state ──────────────────────────────
 BRANCH=$(current_branch)

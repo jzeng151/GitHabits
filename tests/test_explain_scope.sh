@@ -169,8 +169,8 @@ OUTPUT=$(cd "$TMPDIR" && bash "$SETUP" --project --explain-scope=all 2>&1)
 # So we need to do a full install first, then change scope
 rm -rf "$TMPDIR/.claude"
 
-# Simulate install by piping "1" to stdin for the scope prompt
-OUTPUT=$(cd "$TMPDIR" && echo "1" | bash "$SETUP" --project 2>&1)
+# Simulate install by piping "1" (scope=all) and "1" (nudge=on) to stdin
+OUTPUT=$(cd "$TMPDIR" && printf '1\n1\n' | bash "$SETUP" --project 2>&1)
 
 if [ -f "$CONFIG" ]; then
   ACTUAL=$(grep "EXPLAIN_SCOPE=" "$CONFIG" | cut -d= -f2)
@@ -208,8 +208,8 @@ echo "--- T7: Default scope on Enter ---"
 
 rm -rf "$TMPDIR/.claude"
 
-# Send empty input (just Enter) for scope prompt
-OUTPUT=$(cd "$TMPDIR" && echo "" | bash "$SETUP" --project 2>&1)
+# Send empty input (just Enter) for both prompts
+OUTPUT=$(cd "$TMPDIR" && printf '\n\n' | bash "$SETUP" --project 2>&1)
 
 if [ -f "$CONFIG" ]; then
   ACTUAL=$(grep "EXPLAIN_SCOPE=" "$CONFIG" | cut -d= -f2)
@@ -234,7 +234,7 @@ for choice in 1 2 3 4; do
     4) EXPECTED="none" ;;
   esac
   rm -rf "$TMPDIR/.claude"
-  OUTPUT=$(cd "$TMPDIR" && echo "$choice" | bash "$SETUP" --project 2>&1)
+  OUTPUT=$(cd "$TMPDIR" && printf '%s\n1\n' "$choice" | bash "$SETUP" --project 2>&1)
   if [ -f "$CONFIG" ]; then
     ACTUAL=$(grep "EXPLAIN_SCOPE=" "$CONFIG" | cut -d= -f2)
     if [ "$ACTUAL" = "$EXPECTED" ]; then
@@ -253,7 +253,7 @@ echo "--- T9: Uninstall removes config ---"
 
 # First install
 rm -rf "$TMPDIR/.claude"
-OUTPUT=$(cd "$TMPDIR" && echo "2" | bash "$SETUP" --project 2>&1)
+OUTPUT=$(cd "$TMPDIR" && printf '2\n1\n' | bash "$SETUP" --project 2>&1)
 
 if [ -f "$CONFIG" ]; then
   pass "Config exists before uninstall"
@@ -287,7 +287,7 @@ echo ""
 echo "--- T10: Scope change doesn't break existing install ---"
 
 rm -rf "$TMPDIR/.claude"
-OUTPUT=$(cd "$TMPDIR" && echo "2" | bash "$SETUP" --project 2>&1)
+OUTPUT=$(cd "$TMPDIR" && printf '2\n1\n' | bash "$SETUP" --project 2>&1)
 
 # Verify full install exists
 PRE_HOOK_EXISTS=false
@@ -325,6 +325,58 @@ if [ "$ACTUAL" = "all" ]; then
 else
   fail "Scope is '$ACTUAL' instead of 'all' after change"
 fi
+
+# Verify WORKFLOW_NUDGE was preserved when only scope changed
+NUDGE_VAL=$(grep "WORKFLOW_NUDGE=" "$CONFIG" 2>/dev/null | cut -d= -f2)
+if [ -n "$NUDGE_VAL" ]; then
+  pass "WORKFLOW_NUDGE preserved after scope-only change ($NUDGE_VAL)"
+else
+  fail "WORKFLOW_NUDGE lost after scope-only change"
+fi
+
+# ── T10b: Workflow nudge change preserves scope ──────────────────────────────
+echo ""
+echo "--- T10b: Nudge change preserves scope ---"
+
+# Change nudge — scope should be preserved
+OUTPUT=$(cd "$TMPDIR" && bash "$SETUP" --project --workflow-nudge=off 2>&1)
+
+ACTUAL_SCOPE=$(grep "EXPLAIN_SCOPE=" "$CONFIG" | cut -d= -f2)
+ACTUAL_NUDGE=$(grep "WORKFLOW_NUDGE=" "$CONFIG" | cut -d= -f2)
+
+if [ "$ACTUAL_SCOPE" = "all" ]; then
+  pass "EXPLAIN_SCOPE preserved after nudge change"
+else
+  fail "EXPLAIN_SCOPE is '$ACTUAL_SCOPE' instead of 'all' after nudge change"
+fi
+
+if [ "$ACTUAL_NUDGE" = "off" ]; then
+  pass "WORKFLOW_NUDGE updated to 'off'"
+else
+  fail "WORKFLOW_NUDGE is '$ACTUAL_NUDGE' instead of 'off'"
+fi
+
+# Change it back
+OUTPUT=$(cd "$TMPDIR" && bash "$SETUP" --project --workflow-nudge=on 2>&1)
+ACTUAL_NUDGE=$(grep "WORKFLOW_NUDGE=" "$CONFIG" | cut -d= -f2)
+if [ "$ACTUAL_NUDGE" = "on" ]; then
+  pass "WORKFLOW_NUDGE updated back to 'on'"
+else
+  fail "WORKFLOW_NUDGE is '$ACTUAL_NUDGE' instead of 'on'"
+fi
+
+# ── T10c: Invalid nudge values rejected ──────────────────────────────────────
+echo ""
+echo "--- T10c: Invalid nudge values ---"
+
+for bad in "yes" "true" "1" "OFF" "ON"; do
+  OUTPUT=$(cd "$TMPDIR" && bash "$SETUP" --project --workflow-nudge="$bad" 2>&1) || true
+  if echo "$OUTPUT" | grep -qi "invalid"; then
+    pass "--workflow-nudge='$bad' rejected"
+  else
+    fail "--workflow-nudge='$bad' not rejected"
+  fi
+done
 
 # ── T11: Global CLAUDE.md has updated Rule 1 ────────────────────────────────
 echo ""

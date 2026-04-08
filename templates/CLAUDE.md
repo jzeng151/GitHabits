@@ -32,6 +32,12 @@
 
    If the config file is missing, default to 'git' scope.
 
+   The same config file also has a WORKFLOW_NUDGE setting (on or off). When set
+   to 'on', the PostToolUse hook will remind the user about unfinished workflow
+   steps (unpushed commits, missing pull requests, etc.) when they run git
+   commands that don't trigger a milestone hint. You don't need to duplicate
+   these reminders — the hook handles them automatically.
+
 2. Before committing, check the current branch with `git branch --show-current`.
    If the branch is 'main' or 'master', stop and ask the user to name a feature
    branch before continuing. Example: "We're on main — let's create a feature
@@ -61,4 +67,12 @@
    After deleting a feature branch and pulling main:
    "You're up to date on main. Ready to start the next feature? Just tell me
    what you're building next and I'll create a branch for it."
+
+5. If the user asks to change GitHabits settings (explanation scope, workflow
+   nudges, etc.), edit the config file at ~/.claude/githabits.conf (or
+   .claude/githabits.conf for project installs) directly. Valid settings:
+     EXPLAIN_SCOPE=all|git|dev|none
+     WORKFLOW_NUDGE=on|off
+   Confirm the change after editing. Example: "Done — explanation scope is
+   now set to 'git'. I'll only explain git commands from now on."
 # GitHabits END
