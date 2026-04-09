@@ -16,7 +16,8 @@
 **Context:** README Configuration section: `GITHABITS_ALLOW_MAIN=1 claude "save my work"` for one-time bypasses. `setup.sh --uninstall` to remove permanently.
 **Depends on:** README file existing.
 
-## T3: Merged-PR detection in post_tool_use.sh
+## T3: Merged-PR detection in post_tool_use.sh [PARTIAL — nudge covers `git status` case]
+**Status:** The workflow nudge feature (Priority 1 in `check_workflow_nudge()`) detects merged PRs via `gh pr view --json state` when users run non-milestone git commands like `git status`. The remaining gap is detecting merged PRs specifically on `git pull`/`git fetch` on a feature branch (the `pull` case in the milestone hints).
 **What:** When the user runs `git pull` or `git fetch` on a feature branch, detect if the PR for that branch was already merged into main and suggest cleanup (delete branch, switch to main, pull).
 **Why:** The full workflow loop needs a signal for "PR was merged" to prompt the user through cleanup and starting the next feature. Without this, the loop stalls after the PR step.
 **Signal options:**

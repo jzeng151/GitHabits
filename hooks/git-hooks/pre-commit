@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# GitHabits — pre-commit git hook
+# Blocks commits on main/master and warns about detached HEAD.
+# Works with any git client (terminal, Cursor, Windsurf, aider, etc.)
+
+set -euo pipefail
+
+# ── Source shared library ────────────────────────────────────────────────────
+for _lib in "$HOME/.githabits/lib/githabits.sh" "$HOME/.claude/lib/githabits.sh"; do
+  if [ -f "$_lib" ]; then
+    source "$_lib"
+    break
+  fi
+done
+[ -z "${_GITHABITS_LIB_LOADED:-}" ] && exit 0  # lib not found, don't block
+
+# ── Override ─────────────────────────────────────────────────────────────────
+[ "${GITHABITS_ALLOW_MAIN:-0}" = "1" ] && exit 0
+
+# ── Check branch state ──────────────────────────────────────────────────────
+BRANCH=$(current_branch)
+
+# Detached HEAD
+if [ -z "$BRANCH" ]; then
+  emit_block_tty "detached HEAD" \
+"You're in 'detached HEAD' state — not on any branch.
+
+If you commit now, your changes won't be attached to any branch
+and could be lost. Fix this first:
+
+  git checkout main              (go back to main)
+  git checkout -b feature/x      (or create a new branch here)
+
+Then try your commit again."
+  exit 1
+fi
+
+# Commit on main/master
+if is_main_branch "$BRANCH"; then
+  # Allow the very first commit in an empty repo
+  if git rev-parse HEAD >/dev/null 2>&1; then
+    emit_block_tty "commit on $BRANCH" \
+"You're about to commit directly to '$BRANCH'.
+
+Senior engineers never do this — '$BRANCH' is the branch everyone
+relies on being stable. Work on a feature branch instead:
+
+  git checkout -b feature/your-feature-name
+  git add .
+  git commit -m \"describe what you changed\"
+  git push origin feature/your-feature-name
+
+Then open a pull request on GitHub to merge it in."
+    exit 1
+  fi
+fi
+
+exit 0
