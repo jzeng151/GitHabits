@@ -98,6 +98,25 @@ bash /tmp/githabits/setup.sh --git-hooks
 
 If Claude Code is detected, both hook types are installed. If not, only git hooks are installed.
 
+### Option D — Other AI Agents (OpenCode, Codex, Goose, Cursor, Windsurf)
+
+Install pedagogy rules for your AI agent:
+
+```bash
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --agents --git-hooks
+rm -rf /tmp/githabits
+```
+
+This installs:
+- **AGENTS.md** in your project root (for OpenCode, Codex, Amp)
+- **.goosehints** if Goose is detected
+- **.cursor/rules/githabits.mdc** if a `.cursor/` directory exists
+- **.windsurf/rules/githabits.md** if a `.windsurf/` directory exists
+- **Native git hooks** via `--git-hooks` for hard blocking
+
+The rules teach your AI agent to explain git commands, check the branch before committing, and suggest the next workflow step. Git hooks provide the hard safety net that blocks commits and pushes to main regardless of which agent you use.
+
 ---
 
 ## What gets installed
@@ -278,6 +297,31 @@ rm -rf /tmp/githabits
 ```
 
 This removes the hook script, unregisters it from `settings.json`, and removes the GitHabits block from `CLAUDE.md`. Clean removal, nothing left behind.
+
+### Uninstall agent rules
+
+To remove rules installed with `--agents`:
+
+```bash
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --uninstall --agents
+rm -rf /tmp/githabits
+```
+
+This removes:
+
+| Agent | What gets removed |
+|-------|------------------|
+| OpenCode/Codex/Amp | GitHabits block from `AGENTS.md` (other content preserved) |
+| Goose | GitHabits block from `.goosehints` (other content preserved) |
+| Cursor | `.cursor/rules/githabits.mdc` (file deleted) |
+| Windsurf | `.windsurf/rules/githabits.md` (file deleted) |
+
+**Manual uninstall** (no script needed):
+- AGENTS.md / .goosehints: delete the block between `# GitHabits START` and `# GitHabits END`
+- Cursor: `rm .cursor/rules/githabits.mdc`
+- Windsurf: `rm .windsurf/rules/githabits.md`
+- Git hooks: `rm -rf ~/.githabits && git config --global --unset init.templateDir`
 
 ---
 

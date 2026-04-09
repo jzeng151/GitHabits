@@ -66,6 +66,10 @@ POST_HOOK_SRC="$SCRIPT_DIR/hooks/post_tool_use.sh"
 GIT_HOOKS_SRC="$SCRIPT_DIR/hooks/git-hooks"
 LIB_SRC="$SCRIPT_DIR/lib/githabits.sh"
 CLAUDE_MD_SRC="$SCRIPT_DIR/templates/CLAUDE.md"
+AGENTS_MD_SRC="$SCRIPT_DIR/templates/AGENTS.md"
+GOOSEHINTS_SRC="$SCRIPT_DIR/templates/.goosehints"
+CURSOR_RULES_SRC="$SCRIPT_DIR/templates/cursor-rules/githabits.mdc"
+WINDSURF_RULES_SRC="$SCRIPT_DIR/templates/windsurf-rules/githabits.md"
 MARKER_START="# GitHabits START"
 MARKER_END="# GitHabits END"
 GITHABITS_DIR="$HOME/.githabits"
@@ -86,6 +90,7 @@ error()   { echo -e "${RED}✗${RESET} $*" >&2; }
 MODE="global"
 UNINSTALL=false
 GIT_HOOKS=false
+AGENTS=false
 EXPLAIN_SCOPE=""
 WORKFLOW_NUDGE=""
 
@@ -93,6 +98,7 @@ for arg in "$@"; do
   case "$arg" in
     --project)    MODE="project" ;;
     --git-hooks)  GIT_HOOKS=true ;;
+    --agents)     AGENTS=true ;;
     --uninstall)  UNINSTALL=true ;;
     --explain-scope=*)
       EXPLAIN_SCOPE="${arg#*=}"
@@ -101,18 +107,18 @@ for arg in "$@"; do
       WORKFLOW_NUDGE="${arg#*=}"
       ;;
     --help|-h)
-      echo "Usage: ./setup.sh [--project] [--git-hooks] [--uninstall]"
+      echo "Usage: ./setup.sh [--project] [--git-hooks] [--agents] [--uninstall]"
       echo "                  [--explain-scope=SCOPE] [--workflow-nudge=on|off]"
       echo ""
       echo "  (no flag)                Install globally in ~/.claude/ (Claude Code only)"
       echo "  --project                Install in .claude/ (this project only, Claude Code)"
       echo "  --git-hooks              Install native git hooks (works without Claude Code)"
+      echo "  --agents                 Install rules for detected AI agents (OpenCode, Codex, etc.)"
       echo "  --uninstall              Remove all GitHabits files and config"
       echo "  --explain-scope=SCOPE    Set explanation scope: all, git, dev, none"
       echo "  --workflow-nudge=on|off  Toggle workflow reminders"
       echo ""
-      echo "  Combine flags: ./setup.sh --git-hooks installs standalone git hooks."
-      echo "  Without --git-hooks, only Claude Code hooks are installed."
+      echo "  Combine flags: ./setup.sh --git-hooks --agents"
       exit 0
       ;;
     *) error "Unknown argument: $arg"; exit 1 ;;
@@ -148,7 +154,7 @@ update_config() {
 
 # ── Standalone config mode ───────────────────────────────────────────────────
 # Allow changing settings without a full reinstall (unless also doing --git-hooks install).
-if [ "$UNINSTALL" = false ] && [ "$GIT_HOOKS" = false ] && { [ -n "$EXPLAIN_SCOPE" ] || [ -n "$WORKFLOW_NUDGE" ]; }; then
+if [ "$UNINSTALL" = false ] && [ "$GIT_HOOKS" = false ] && [ "$AGENTS" = false ] && { [ -n "$EXPLAIN_SCOPE" ] || [ -n "$WORKFLOW_NUDGE" ]; }; then
   STANDALONE=true
 
   if [ -n "$EXPLAIN_SCOPE" ]; then
@@ -266,6 +272,63 @@ PYEOF
   if [ "$CURRENT_TEMPLATE" = "$GITHABITS_DIR/template" ]; then
     git config --global --unset init.templateDir
     success "Unset git template directory"
+  fi
+
+  # Remove agent rules files (when --agents is also passed)
+  if [ "$AGENTS" = true ]; then
+    # AGENTS.md — remove marked block (may contain user content outside markers)
+    if [ -f "AGENTS.md" ] && grep -q "$MARKER_START" "AGENTS.md" 2>/dev/null; then
+      python3 - "AGENTS.md" "$MARKER_START" "$MARKER_END" <<'PYEOF'
+import sys
+path, start, end = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+out, skip = [], False
+for line in lines:
+    if line.strip() == start:
+        skip = True
+    if not skip:
+        out.append(line)
+    if skip and line.strip() == end:
+        skip = False
+with open(path, "w") as f:
+    f.writelines(out)
+PYEOF
+      success "Removed GitHabits block from: AGENTS.md"
+    fi
+
+    # .goosehints — remove marked block
+    if [ -f ".goosehints" ] && grep -q "$MARKER_START" ".goosehints" 2>/dev/null; then
+      python3 - ".goosehints" "$MARKER_START" "$MARKER_END" <<'PYEOF'
+import sys
+path, start, end = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+out, skip = [], False
+for line in lines:
+    if line.strip() == start:
+        skip = True
+    if not skip:
+        out.append(line)
+    if skip and line.strip() == end:
+        skip = False
+with open(path, "w") as f:
+    f.writelines(out)
+PYEOF
+      success "Removed GitHabits block from: .goosehints"
+    fi
+
+    # Cursor — delete dedicated file
+    if [ -f ".cursor/rules/githabits.mdc" ]; then
+      rm -f ".cursor/rules/githabits.mdc"
+      success "Removed: .cursor/rules/githabits.mdc"
+    fi
+
+    # Windsurf — delete dedicated file
+    if [ -f ".windsurf/rules/githabits.md" ]; then
+      rm -f ".windsurf/rules/githabits.md"
+      success "Removed: .windsurf/rules/githabits.md"
+    fi
   fi
 
   echo ""
@@ -484,6 +547,65 @@ WRAPPER
   fi
 fi
 
+# ── Agent rules (optional) ───────────────────────────────────────────────────
+if [ "$AGENTS" = true ]; then
+  echo ""
+  info "Installing agent rules..."
+  AGENTS_INSTALLED=""
+
+  # Helper: inject marked block into a file (idempotent)
+  inject_agent_rules() {
+    local dest="$1"
+    local src="$2"
+    if [ -f "$dest" ] && grep -q "$MARKER_START" "$dest" 2>/dev/null; then
+      warn "GitHabits rules already in $dest (skipped)"
+    else
+      echo "" >> "$dest"
+      cat "$src" >> "$dest"
+      success "Added GitHabits rules to: $dest"
+    fi
+  }
+
+  # AGENTS.md — for OpenCode, Codex, Amp (project root)
+  inject_agent_rules "AGENTS.md" "$AGENTS_MD_SRC"
+  AGENTS_INSTALLED="$AGENTS_INSTALLED OpenCode/Codex/Amp"
+
+  # .goosehints — for Goose (project root)
+  if command -v goose >/dev/null 2>&1 || [ -f ".goosehints" ]; then
+    inject_agent_rules ".goosehints" "$GOOSEHINTS_SRC"
+    AGENTS_INSTALLED="$AGENTS_INSTALLED Goose"
+  fi
+
+  # Cursor — per-project only (dedicated file)
+  if [ -d ".cursor" ]; then
+    mkdir -p ".cursor/rules"
+    if [ -f ".cursor/rules/githabits.mdc" ]; then
+      warn "Cursor rules already installed (skipped)"
+    else
+      cp "$CURSOR_RULES_SRC" ".cursor/rules/githabits.mdc"
+      success "Installed: .cursor/rules/githabits.mdc"
+    fi
+    AGENTS_INSTALLED="$AGENTS_INSTALLED Cursor"
+  fi
+
+  # Windsurf — per-project only (dedicated file)
+  if [ -d ".windsurf" ]; then
+    mkdir -p ".windsurf/rules"
+    if [ -f ".windsurf/rules/githabits.md" ]; then
+      warn "Windsurf rules already installed (skipped)"
+    else
+      cp "$WINDSURF_RULES_SRC" ".windsurf/rules/githabits.md"
+      success "Installed: .windsurf/rules/githabits.md"
+    fi
+    AGENTS_INSTALLED="$AGENTS_INSTALLED Windsurf"
+  fi
+
+  if [ -n "$AGENTS_INSTALLED" ]; then
+    echo ""
+    echo "  Rules installed for:$AGENTS_INSTALLED"
+  fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 info "GitHabits installed!"
@@ -495,15 +617,21 @@ if [ "$GIT_HOOKS" = true ]; then
   echo "  • Native git hooks work with any git client (terminal, Cursor, etc.)"
   echo "  • After each git milestone, you'll see next-step hints in your terminal"
 fi
-if [ -f "$HOOK_DEST" ]; then
+if [ "$INSTALL_CLAUDE_HOOKS" = true ] && [ -f "$HOOK_DEST" ]; then
   echo "  • Claude explains commands before running them (scope: $EXPLAIN_SCOPE)"
   echo "  • After each git milestone, Claude suggests the next step in the workflow"
   echo "  • Workflow nudges remind you about unfinished steps (nudge: $WORKFLOW_NUDGE)"
+fi
+if [ "$AGENTS" = true ]; then
+  echo "  • AI agents will explain git commands and suggest workflow steps"
 fi
 echo ""
 echo "To change settings after install:"
 echo "  ./setup.sh --explain-scope=all|git|dev|none"
 echo "  ./setup.sh --workflow-nudge=on|off"
 echo "To uninstall:  ./setup.sh --uninstall"
+if [ "$AGENTS" = true ]; then
+  echo "To uninstall agent rules:  ./setup.sh --uninstall --agents"
+fi
 echo "To override (solo project):  GITHABITS_ALLOW_MAIN=1 (see README)"
 echo ""

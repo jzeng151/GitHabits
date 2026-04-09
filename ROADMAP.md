@@ -73,6 +73,8 @@
 ### Features
 
 - [x] Standalone CLI / git hooks — Works with any agent, not just Claude Code (Phase 1: native git hooks)
+- [x] Agent rules files — AGENTS.md, .goosehints, Cursor .mdc, Windsurf .md templates for multi-agent pedagogy
+- [ ] MCP server — Expose GitHabits as an MCP server for richer agent integration
 - [ ] Git replay mode — Post-feature post-mortem: "Here's what your git history looked like vs. what a senior engineer would have done"
 - [ ] Color-coded bash explanations — When terminal rendering support is confirmed feasible
 - [ ] `npx githabits init` / Homebrew — Broader discoverability and installation
