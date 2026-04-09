@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# GitHabits — pre-push git hook
+# Blocks pushes to main/master. Warns on force-push to feature branches.
+# Works with any git client.
+#
+# Git passes: remote-name remote-url on argv
+# Git passes: <local ref> <local sha> <remote ref> <remote sha> on stdin (per ref)
+
+set -euo pipefail
+
+# ── Source shared library ────────────────────────────────────────────────────
+for _lib in "$HOME/.githabits/lib/githabits.sh" "$HOME/.claude/lib/githabits.sh"; do
+  if [ -f "$_lib" ]; then
+    source "$_lib"
+    break
+  fi
+done
+[ -z "${_GITHABITS_LIB_LOADED:-}" ] && exit 0
+
+# ── Override ─────────────────────────────────────────────────────────────────
+[ "${GITHABITS_ALLOW_MAIN:-0}" = "1" ] && exit 0
+
+# ── Read push info from stdin ────────────────────────────────────────────────
+# Each line: <local ref> <local sha> <remote ref> <remote sha>
+while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+  # Extract branch name from remote ref (refs/heads/main -> main)
+  REMOTE_BRANCH="${REMOTE_REF##refs/heads/}"
+
+  if is_main_branch "$REMOTE_BRANCH"; then
+    emit_block_tty "push to $REMOTE_BRANCH" \
+"You're about to push directly to '$REMOTE_BRANCH'.
+
+'$REMOTE_BRANCH' is the official copy on GitHub. Push to a feature
+branch instead and create a pull request:
+
+  git push origin feature/your-feature-name
+
+Then go to GitHub and click 'Compare & pull request'."
+    exit 1
+  fi
+done
+
+exit 0

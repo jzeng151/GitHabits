@@ -106,6 +106,34 @@ emit_warn() {
   echo "[GitHabits WARNING] $1" >&2
 }
 
+# ── TTY output (for native git hooks) ───────────────────────────────────────
+# These functions output plain text to stderr for terminal users.
+# No JSON — git hooks talk directly to the terminal, not to an agent.
+
+# emit_block_tty <title> <message>
+#   Prints a tutor-voice block message to stderr.
+#   Caller is responsible for exiting with code 1 after calling this.
+emit_block_tty() {
+  local title="$1"
+  local msg="$2"
+  echo "" >&2
+  echo "╔══════════════════════════════════════════════════════════════╗" >&2
+  echo "║  GitHabits — $title" >&2
+  echo "╚══════════════════════════════════════════════════════════════╝" >&2
+  echo "" >&2
+  echo "$msg" >&2
+  echo "" >&2
+}
+
+# emit_hint_tty <message>
+#   Prints a milestone hint to stderr.
+emit_hint_tty() {
+  local msg="$1"
+  echo "" >&2
+  echo "[GitHabits] $msg" >&2
+  echo "" >&2
+}
+
 # ── Config reading ───────────────────────────────────────────────────────────
 
 # read_config <key> <default>

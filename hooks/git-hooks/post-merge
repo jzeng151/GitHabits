@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# GitHabits — post-merge git hook
+# Suggests next steps after a merge (typically from git pull).
+#
+# Git passes: <squash-flag> (1 if squash merge, 0 otherwise)
+
+set -euo pipefail
+
+# ── Source shared library ────────────────────────────────────────────────────
+for _lib in "$HOME/.githabits/lib/githabits.sh" "$HOME/.claude/lib/githabits.sh"; do
+  if [ -f "$_lib" ]; then
+    source "$_lib"
+    break
+  fi
+done
+[ -z "${_GITHABITS_LIB_LOADED:-}" ] && exit 0
+
+# ── Hint ─────────────────────────────────────────────────────────────────────
+BRANCH=$(current_branch)
+
+if [ -n "$BRANCH" ] && is_main_branch "$BRANCH"; then
+  emit_hint_tty "Updated '$BRANCH' with the latest changes. Ready for your next feature:
+
+  git checkout -b feature/your-feature-name"
+fi
+
+exit 0

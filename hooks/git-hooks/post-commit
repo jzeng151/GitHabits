@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# GitHabits — post-commit git hook
+# Suggests pushing after a successful commit on a feature branch.
+
+set -euo pipefail
+
+# ── Source shared library ────────────────────────────────────────────────────
+for _lib in "$HOME/.githabits/lib/githabits.sh" "$HOME/.claude/lib/githabits.sh"; do
+  if [ -f "$_lib" ]; then
+    source "$_lib"
+    break
+  fi
+done
+[ -z "${_GITHABITS_LIB_LOADED:-}" ] && exit 0
+
+# ── Hint ─────────────────────────────────────────────────────────────────────
+BRANCH=$(current_branch)
+
+if [ -n "$BRANCH" ] && ! is_main_branch "$BRANCH"; then
+  emit_hint_tty "Commit saved on '$BRANCH'. Next step — push to GitHub:
+
+  git push origin $BRANCH"
+fi
+
+exit 0

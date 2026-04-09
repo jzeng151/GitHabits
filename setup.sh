@@ -5,6 +5,7 @@
 # Usage:
 #   ./setup.sh             # global install (~/.claude/)
 #   ./setup.sh --project   # per-project install (.claude/)
+#   ./setup.sh --git-hooks # install native git hooks (works without Claude Code)
 #   ./setup.sh --uninstall # remove all GitHabits files
 
 set -euo pipefail
@@ -62,10 +63,12 @@ check_claude_version() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SRC="$SCRIPT_DIR/hooks/pre_tool_use.sh"
 POST_HOOK_SRC="$SCRIPT_DIR/hooks/post_tool_use.sh"
+GIT_HOOKS_SRC="$SCRIPT_DIR/hooks/git-hooks"
 LIB_SRC="$SCRIPT_DIR/lib/githabits.sh"
 CLAUDE_MD_SRC="$SCRIPT_DIR/templates/CLAUDE.md"
 MARKER_START="# GitHabits START"
 MARKER_END="# GitHabits END"
+GITHABITS_DIR="$HOME/.githabits"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
@@ -82,13 +85,15 @@ error()   { echo -e "${RED}✗${RESET} $*" >&2; }
 # ── Parse flags ───────────────────────────────────────────────────────────────
 MODE="global"
 UNINSTALL=false
+GIT_HOOKS=false
 EXPLAIN_SCOPE=""
 WORKFLOW_NUDGE=""
 
 for arg in "$@"; do
   case "$arg" in
-    --project)   MODE="project" ;;
-    --uninstall) UNINSTALL=true ;;
+    --project)    MODE="project" ;;
+    --git-hooks)  GIT_HOOKS=true ;;
+    --uninstall)  UNINSTALL=true ;;
     --explain-scope=*)
       EXPLAIN_SCOPE="${arg#*=}"
       ;;
@@ -96,16 +101,18 @@ for arg in "$@"; do
       WORKFLOW_NUDGE="${arg#*=}"
       ;;
     --help|-h)
-      echo "Usage: ./setup.sh [--project] [--uninstall] [--explain-scope=SCOPE]"
-      echo "                  [--workflow-nudge=on|off]"
+      echo "Usage: ./setup.sh [--project] [--git-hooks] [--uninstall]"
+      echo "                  [--explain-scope=SCOPE] [--workflow-nudge=on|off]"
       echo ""
-      echo "  (no flag)                Install globally in ~/.claude/"
-      echo "  --project                Install in .claude/ (this project only)"
+      echo "  (no flag)                Install globally in ~/.claude/ (Claude Code only)"
+      echo "  --project                Install in .claude/ (this project only, Claude Code)"
+      echo "  --git-hooks              Install native git hooks (works without Claude Code)"
       echo "  --uninstall              Remove all GitHabits files and config"
       echo "  --explain-scope=SCOPE    Set explanation scope: all, git, dev, none"
       echo "  --workflow-nudge=on|off  Toggle workflow reminders"
       echo ""
-      echo "  Flags can be used standalone to change settings after install."
+      echo "  Combine flags: ./setup.sh --git-hooks installs standalone git hooks."
+      echo "  Without --git-hooks, only Claude Code hooks are installed."
       exit 0
       ;;
     *) error "Unknown argument: $arg"; exit 1 ;;
@@ -140,8 +147,8 @@ update_config() {
 }
 
 # ── Standalone config mode ───────────────────────────────────────────────────
-# Allow changing settings without a full reinstall.
-if [ "$UNINSTALL" = false ] && { [ -n "$EXPLAIN_SCOPE" ] || [ -n "$WORKFLOW_NUDGE" ]; }; then
+# Allow changing settings without a full reinstall (unless also doing --git-hooks install).
+if [ "$UNINSTALL" = false ] && [ "$GIT_HOOKS" = false ] && { [ -n "$EXPLAIN_SCOPE" ] || [ -n "$WORKFLOW_NUDGE" ]; }; then
   STANDALONE=true
 
   if [ -n "$EXPLAIN_SCOPE" ]; then
@@ -248,6 +255,19 @@ PYEOF
     success "Removed GitHabits block from: $CLAUDE_MD_FILE"
   fi
 
+  # Remove native git hooks (template directory)
+  if [ -d "$GITHABITS_DIR" ]; then
+    rm -rf "$GITHABITS_DIR"
+    success "Removed git hooks directory: $GITHABITS_DIR"
+  fi
+
+  # Reset git template directory if it pointed to us
+  CURRENT_TEMPLATE=$(git config --global init.templateDir 2>/dev/null) || true
+  if [ "$CURRENT_TEMPLATE" = "$GITHABITS_DIR/template" ]; then
+    git config --global --unset init.templateDir
+    success "Unset git template directory"
+  fi
+
   echo ""
   success "GitHabits uninstalled."
   exit 0
@@ -255,74 +275,87 @@ fi
 
 # ── Install ───────────────────────────────────────────────────────────────────
 echo ""
-info "Installing GitHabits (${MODE} mode)..."
+if [ "$GIT_HOOKS" = true ]; then
+  info "Installing GitHabits (git hooks mode)..."
+else
+  info "Installing GitHabits (${MODE} mode)..."
+fi
 echo ""
 
-# Verify Claude Code version
-check_claude_version
-
-# Ask about explanation scope (unless already set via flag)
-if [ -z "$EXPLAIN_SCOPE" ]; then
-  echo ""
-  echo "How much should Claude explain when running commands?"
-  echo ""
-  echo "  1) All commands    — explain every bash command (ls, npm, curl, etc.)"
-  echo "  2) Git commands    — only explain git commands (recommended for git learners)"
-  echo "  3) Dev tools       — git + npm, pip, curl, docker, chmod, mkdir, etc."
-  echo "  4) None            — no automatic explanations"
-  echo ""
-  printf "  Choose [1-4, default: 2]: "
-  read -r SCOPE_CHOICE
-  case "$SCOPE_CHOICE" in
-    1) EXPLAIN_SCOPE="all" ;;
-    3) EXPLAIN_SCOPE="dev" ;;
-    4) EXPLAIN_SCOPE="none" ;;
-    *) EXPLAIN_SCOPE="git" ;;
-  esac
-  echo ""
+# Verify Claude Code version (skip for git-hooks-only installs)
+if [ "$GIT_HOOKS" = false ] || command -v claude >/dev/null 2>&1; then
+  check_claude_version
 fi
 
-# Ask about workflow nudges (unless already set via flag)
-if [ -z "$WORKFLOW_NUDGE" ]; then
-  echo "Should Claude remind you about unfinished workflow steps?"
-  echo ""
-  echo "  1) On   — gentle reminders about unpushed commits, missing PRs (recommended)"
-  echo "  2) Off  — no workflow reminders"
-  echo ""
-  printf "  Choose [1-2, default: 1]: "
-  read -r NUDGE_CHOICE
-  case "$NUDGE_CHOICE" in
-    2) WORKFLOW_NUDGE="off" ;;
-    *) WORKFLOW_NUDGE="on" ;;
-  esac
-  echo ""
+# ── Claude Code hooks (skip for git-hooks-only installs) ─────────────────────
+INSTALL_CLAUDE_HOOKS=true
+if [ "$GIT_HOOKS" = true ] && ! command -v claude >/dev/null 2>&1; then
+  INSTALL_CLAUDE_HOOKS=false
 fi
 
-# Create directories
-mkdir -p "$HOOKS_DIR"
-mkdir -p "$LIB_DIR"
-mkdir -p "$CLAUDE_DIR"
+if [ "$INSTALL_CLAUDE_HOOKS" = true ]; then
+  # Ask about explanation scope (unless already set via flag)
+  if [ -z "$EXPLAIN_SCOPE" ]; then
+    echo ""
+    echo "How much should Claude explain when running commands?"
+    echo ""
+    echo "  1) All commands    — explain every bash command (ls, npm, curl, etc.)"
+    echo "  2) Git commands    — only explain git commands (recommended for git learners)"
+    echo "  3) Dev tools       — git + npm, pip, curl, docker, chmod, mkdir, etc."
+    echo "  4) None            — no automatic explanations"
+    echo ""
+    printf "  Choose [1-4, default: 2]: "
+    read -r SCOPE_CHOICE
+    case "$SCOPE_CHOICE" in
+      1) EXPLAIN_SCOPE="all" ;;
+      3) EXPLAIN_SCOPE="dev" ;;
+      4) EXPLAIN_SCOPE="none" ;;
+      *) EXPLAIN_SCOPE="git" ;;
+    esac
+    echo ""
+  fi
 
-# Write config file
-cat > "$CONFIG_FILE" <<EOF
+  # Ask about workflow nudges (unless already set via flag)
+  if [ -z "$WORKFLOW_NUDGE" ]; then
+    echo "Should Claude remind you about unfinished workflow steps?"
+    echo ""
+    echo "  1) On   — gentle reminders about unpushed commits, missing PRs (recommended)"
+    echo "  2) Off  — no workflow reminders"
+    echo ""
+    printf "  Choose [1-2, default: 1]: "
+    read -r NUDGE_CHOICE
+    case "$NUDGE_CHOICE" in
+      2) WORKFLOW_NUDGE="off" ;;
+      *) WORKFLOW_NUDGE="on" ;;
+    esac
+    echo ""
+  fi
+
+  # Create directories
+  mkdir -p "$HOOKS_DIR"
+  mkdir -p "$LIB_DIR"
+  mkdir -p "$CLAUDE_DIR"
+
+  # Write config file
+  cat > "$CONFIG_FILE" <<EOF
 EXPLAIN_SCOPE=$EXPLAIN_SCOPE
 WORKFLOW_NUDGE=$WORKFLOW_NUDGE
 EOF
-success "Explanation scope: $EXPLAIN_SCOPE"
-success "Workflow nudge: $WORKFLOW_NUDGE"
+  success "Explanation scope: $EXPLAIN_SCOPE"
+  success "Workflow nudge: $WORKFLOW_NUDGE"
 
-# 1. Install hook scripts
-cp "$HOOK_SRC" "$HOOK_DEST"
-chmod +x "$HOOK_DEST"
-success "Hook installed: $HOOK_DEST"
+  # 1. Install hook scripts
+  cp "$HOOK_SRC" "$HOOK_DEST"
+  chmod +x "$HOOK_DEST"
+  success "Hook installed: $HOOK_DEST"
 
-cp "$POST_HOOK_SRC" "$POST_HOOK_DEST"
-chmod +x "$POST_HOOK_DEST"
-success "Hook installed: $POST_HOOK_DEST"
+  cp "$POST_HOOK_SRC" "$POST_HOOK_DEST"
+  chmod +x "$POST_HOOK_DEST"
+  success "Hook installed: $POST_HOOK_DEST"
 
-# Install shared library
-cp "$LIB_SRC" "$LIB_DIR/githabits.sh"
-success "Library installed: $LIB_DIR/githabits.sh"
+  # Install shared library
+  cp "$LIB_SRC" "$LIB_DIR/githabits.sh"
+  success "Library installed: $LIB_DIR/githabits.sh"
 
 # 2. Register hooks in settings.json
 # Registers both PreToolUse and PostToolUse (idempotent)
@@ -386,16 +419,87 @@ else
   success "Added GitHabits rules to: $CLAUDE_MD_FILE"
 fi
 
+fi  # end INSTALL_CLAUDE_HOOKS
+
+# ── Native git hooks (optional) ──────────────────────────────────────────────
+if [ "$GIT_HOOKS" = true ]; then
+  echo ""
+  info "Installing native git hooks..."
+
+  # Create template directory structure
+  TEMPLATE_HOOKS="$GITHABITS_DIR/template/hooks"
+  mkdir -p "$TEMPLATE_HOOKS"
+  mkdir -p "$GITHABITS_DIR/lib"
+
+  # Copy shared library
+  cp "$LIB_SRC" "$GITHABITS_DIR/lib/githabits.sh"
+  success "Library installed: $GITHABITS_DIR/lib/githabits.sh"
+
+  # Install each git hook with merge support
+  for HOOK_FILE in "$GIT_HOOKS_SRC"/*; do
+    HOOK_NAME=$(basename "$HOOK_FILE")
+    DEST="$TEMPLATE_HOOKS/$HOOK_NAME"
+
+    if [ -f "$DEST" ] && ! grep -q "GitHabits" "$DEST" 2>/dev/null; then
+      # Existing non-GitHabits hook — preserve it
+      mv "$DEST" "$DEST.user"
+      cat > "$DEST" <<WRAPPER
+#!/usr/bin/env bash
+# GitHabits wrapper — runs both user hook and GitHabits hook
+# User's original hook preserved at: $HOOK_NAME.user
+
+# Run user's hook first
+HOOK_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+if [ -x "\$HOOK_DIR/$HOOK_NAME.user" ]; then
+  "\$HOOK_DIR/$HOOK_NAME.user" "\$@"
+  USER_EXIT=\$?
+  [ \$USER_EXIT -ne 0 ] && exit \$USER_EXIT
+fi
+
+# Run GitHabits hook
+exec "\$HOOK_DIR/$HOOK_NAME.githabits" "\$@"
+WRAPPER
+      chmod +x "$DEST"
+      cp "$HOOK_FILE" "$DEST.githabits"
+      chmod +x "$DEST.githabits"
+      success "Merged hook: $HOOK_NAME (user hook preserved as $HOOK_NAME.user)"
+    else
+      cp "$HOOK_FILE" "$DEST"
+      chmod +x "$DEST"
+      success "Hook installed: $HOOK_NAME"
+    fi
+  done
+
+  # Set global template directory
+  CURRENT_TEMPLATE=$(git config --global init.templateDir 2>/dev/null) || true
+  if [ -n "$CURRENT_TEMPLATE" ] && [ "$CURRENT_TEMPLATE" != "$GITHABITS_DIR/template" ]; then
+    warn "Existing template dir: $CURRENT_TEMPLATE"
+    warn "GitHabits will not override it. Copy hooks manually from $TEMPLATE_HOOKS/"
+  else
+    git config --global init.templateDir "$GITHABITS_DIR/template"
+    success "Set git template directory: $GITHABITS_DIR/template"
+    echo ""
+    echo "  New repos (git init / git clone) will automatically get GitHabits hooks."
+    echo "  For existing repos, run 'git init' inside them to apply the template."
+  fi
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 info "GitHabits installed!"
 echo ""
 echo "What happens now:"
-echo "  • Claude explains commands before running them (scope: $EXPLAIN_SCOPE)"
 echo "  • Committing or pushing to main/master is blocked with a tutorial"
 echo "  • You'll be guided to create a feature branch instead"
-echo "  • After each git milestone, Claude suggests the next step in the workflow"
-echo "  • Workflow nudges remind you about unfinished steps (nudge: $WORKFLOW_NUDGE)"
+if [ "$GIT_HOOKS" = true ]; then
+  echo "  • Native git hooks work with any git client (terminal, Cursor, etc.)"
+  echo "  • After each git milestone, you'll see next-step hints in your terminal"
+fi
+if [ -f "$HOOK_DEST" ]; then
+  echo "  • Claude explains commands before running them (scope: $EXPLAIN_SCOPE)"
+  echo "  • After each git milestone, Claude suggests the next step in the workflow"
+  echo "  • Workflow nudges remind you about unfinished steps (nudge: $WORKFLOW_NUDGE)"
+fi
 echo ""
 echo "To change settings after install:"
 echo "  ./setup.sh --explain-scope=all|git|dev|none"

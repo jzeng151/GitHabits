@@ -26,9 +26,14 @@ Claude explains what it's doing in plain English before every git command, block
 
 ## Requirements
 
+**With Claude Code:**
 - [Claude Code](https://claude.ai/code) (PreToolUse hook support, April 2026+)
 - python3 (standard on macOS and Linux)
 - git
+
+**Standalone (any git client):**
+- git 2.9+ (for template directory support)
+- Bash 3.2+ (macOS default)
 
 ---
 
@@ -73,16 +78,54 @@ rm -rf /tmp/githabits
 
 That's it. Open any project in Claude Code and start working.
 
+### Option C — Standalone (no Claude Code)
+
+GitHabits works with any git client: terminal, Cursor, Windsurf, aider, or any other tool that uses git.
+
+```bash
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --git-hooks
+rm -rf /tmp/githabits
+```
+
+This installs native git hooks via `git init.templateDir`. New repos automatically get the hooks. For existing repos, run `git init` inside them to apply.
+
+You can also install both Claude Code hooks and git hooks together:
+
+```bash
+bash /tmp/githabits/setup.sh --git-hooks
+```
+
+If Claude Code is detected, both hook types are installed. If not, only git hooks are installed.
+
 ---
 
 ## What gets installed
+
+### Claude Code install
 
 - `~/.claude/hooks/pre_tool_use.sh` — blocks dangerous git operations before they run
 - `~/.claude/hooks/post_tool_use.sh` — suggests the next step after each git milestone
 - `~/.claude/settings.json` — registers both hooks with Claude Code
 - `~/.claude/CLAUDE.md` — injects pedagogy rules into Claude's instructions
 
-After install, Claude will:
+### Standalone git hooks install (`--git-hooks`)
+
+- `~/.githabits/template/hooks/pre-commit` — blocks commits on main/master
+- `~/.githabits/template/hooks/pre-push` — blocks pushes to main/master
+- `~/.githabits/template/hooks/post-commit` — suggests pushing after commit
+- `~/.githabits/template/hooks/post-checkout` — suggests next step after branch switch
+- `~/.githabits/template/hooks/post-merge` — suggests next feature after pull
+- `~/.githabits/lib/githabits.sh` — shared logic library
+
+After install with `--git-hooks`, any git client will:
+
+1. Block commits and pushes to `main` or `master` with a clear message
+2. Suggest the next step after each git milestone (commit, push, checkout, pull)
+
+---
+
+After install with Claude Code, Claude will:
 
 1. Explain every git command in plain English before running it
 2. Check the current branch before committing — if it's `main`, ask you to name a feature branch first

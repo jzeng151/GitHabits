@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# GitHabits — post-checkout git hook
+# Suggests next steps after switching branches.
+#
+# Git passes: <prev-HEAD> <new-HEAD> <branch-flag>
+# branch-flag = 1 if switching branches, 0 if checking out a file
+
+set -euo pipefail
+
+PREV_HEAD="${1:-}"
+NEW_HEAD="${2:-}"
+BRANCH_FLAG="${3:-0}"
+
+# Only fire on branch switches, not file checkouts
+[ "$BRANCH_FLAG" = "1" ] || exit 0
+
+# ── Source shared library ────────────────────────────────────────────────────
+for _lib in "$HOME/.githabits/lib/githabits.sh" "$HOME/.claude/lib/githabits.sh"; do
+  if [ -f "$_lib" ]; then
+    source "$_lib"
+    break
+  fi
+done
+[ -z "${_GITHABITS_LIB_LOADED:-}" ] && exit 0
+
+# ── Hint ─────────────────────────────────────────────────────────────────────
+BRANCH=$(current_branch)
+
+if [ -z "$BRANCH" ]; then
+  # Detached HEAD after checkout
+  emit_hint_tty "You're in detached HEAD state. Create a branch if you want to keep changes:
+
+  git checkout -b feature/your-feature-name"
+elif is_main_branch "$BRANCH"; then
+  emit_hint_tty "You're on '$BRANCH'. Create a feature branch before making changes:
+
+  git checkout -b feature/your-feature-name"
+else
+  emit_hint_tty "You're on branch '$BRANCH'. Start making changes — commit when you're ready."
+fi
+
+exit 0

@@ -58,11 +58,11 @@
 
 ### Features
 
-- [ ] `git reset --hard` detection — Tutor-voice intervention for destructive operations
-- [ ] `git push --force` detection — Educational block for force-push attempts
-- [ ] PostToolUse explanation hook — Inject bash explanations via hook as fallback for long-context CLAUDE.md drift
+- [x] `git reset --hard` detection — Tutor-voice intervention for destructive operations (also `git clean -f`, `git checkout --`, `git restore`)
+- [x] `git push --force` detection — Blocks force-push to main, warns on feature branches
+- [x] PostToolUse explanation hook — Inject bash explanations via hook as fallback for long-context CLAUDE.md drift
 - [ ] Detached HEAD guidance improvements — Richer message with step-by-step recovery
-- [ ] `lib/githabits.sh` shared library — Extract hook logic for portability to standalone CLI
+- [x] `lib/githabits.sh` shared library — Extract hook logic for portability to standalone CLI
 
 ---
 
@@ -72,7 +72,7 @@
 
 ### Features
 
-- [ ] Standalone CLI / git hooks — Works with any agent, not just Claude Code
+- [x] Standalone CLI / git hooks — Works with any agent, not just Claude Code (Phase 1: native git hooks)
 - [ ] Git replay mode — Post-feature post-mortem: "Here's what your git history looked like vs. what a senior engineer would have done"
 - [ ] Color-coded bash explanations — When terminal rendering support is confirmed feasible
 - [ ] `npx githabits init` / Homebrew — Broader discoverability and installation
