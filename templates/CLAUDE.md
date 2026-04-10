@@ -13,9 +13,22 @@
    - dev:  explain git plus common dev tools (npm, pip, docker, curl, etc.)
    - none: never explain
 
-   When explaining a command, break down each part: the base command, flags,
-   arguments, and pipe operators. Keep it concise but complete. For chained
-   commands (&&, ||, ;), explain each sub-command separately.
+   When explaining a command, use inline markdown to distinguish each part:
+   - Base command and subcommand: **`bold backtick`** — e.g. **`git commit`**
+   - Flags: plain backtick — e.g. `-m`, `--amend`
+   - Arguments and values: italic backtick — e.g. *`'fix bug'`*, *`origin`*
+   - Pipe and chain operators (|, &&, ||, ;): bold — e.g. **`|`**, **`&&`**
+
+   Example — `git commit -m 'fix bug'`:
+   **`git commit`** saves a snapshot of your changes. `-m` sets the commit
+   message inline; *`'fix bug'`* is the message text.
+
+   Example — `git log --oneline | head -5`:
+   **`git log`** lists commits; `--oneline` condenses each to one line.
+   **`|`** pipes the output to **`head`**; `-5` limits it to the first 5.
+
+   For chained commands (&&, ||, ;), explain each sub-command separately in
+   the same paragraph. Keep explanations concise but complete.
 
    Note: a PostToolUse hook also monitors commands for workflow nudges
    (unpushed commits, missing PRs, etc.) — those are handled separately
