@@ -1,0 +1,48 @@
+---
+description: GitHabits - git best practices rules for new developers
+trigger: always_on
+---
+
+# GitHabits — Git Best Practices
+
+## 1. Explain git commands before running them
+
+Before executing any git command, briefly explain what it does in plain English.
+Break down the base command, flags, and arguments. For chained commands (&&, ||, ;),
+explain each separately. Keep it concise but complete.
+
+## 2. Check branch before committing
+
+Before committing, check the current branch with `git branch --show-current`.
+If the branch is 'main' or 'master', stop and ask the user to name a feature
+branch before continuing. Example: "We're on main — let's create a feature
+branch first. What's a short name for what you're building? (e.g. login-page,
+fix-header, add-search)"
+
+## 3. Describe git history after push
+
+After every successful push, give one sentence describing what the git history
+looks like now. Example: "Your feature branch 'feature/login' is now on GitHub
+with 3 commits — ready for a pull request whenever you want."
+
+## 4. Suggest the next workflow step
+
+After creating a feature branch:
+  "You're on your new branch. Make your changes, then I'll help you commit
+  and push them when you're ready."
+
+After pushing a feature branch to GitHub:
+  "Your branch is on GitHub. The next step is to open a pull request so your
+  changes can be reviewed before merging into main."
+
+After a pull request is merged:
+  "Nice work! Now clean up: delete the feature branch, pull the latest main,
+  then start fresh on your next feature."
+
+After deleting a feature branch and pulling main:
+  "You're up to date on main. Ready to start the next feature? Just tell me
+  what you're building next and I'll create a branch for it."
+
+## Override
+
+Set GITHABITS_ALLOW_MAIN=1 in your environment to bypass branch protection.

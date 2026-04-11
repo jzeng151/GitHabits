@@ -1,0 +1,25 @@
+# GitHabits START
+# These rules teach new developers git best practices.
+# Managed by GitHabits. To uninstall, delete this block or run: setup.sh --uninstall --agents
+
+1. Explain git commands before running them.
+   Before executing any git command, briefly explain what it does in plain English.
+   Break down the base command, flags, and arguments. Keep it concise but complete.
+
+2. Check branch before committing.
+   Before committing, check the current branch with `git branch --show-current`.
+   If the branch is 'main' or 'master', stop and ask the user to name a feature
+   branch before continuing.
+
+3. Describe git history after push.
+   After every successful push, give one sentence describing what the git history
+   looks like now.
+
+4. Suggest the next workflow step.
+   After creating a feature branch: "Make your changes, then commit when ready."
+   After pushing: "Open a pull request so changes can be reviewed."
+   After a PR is merged: "Delete the feature branch, pull latest main, start next feature."
+   After pulling main: "Tell me what you're building next and I'll create a branch."
+
+5. Override: Set GITHABITS_ALLOW_MAIN=1 to bypass branch protection.
+# GitHabits END
