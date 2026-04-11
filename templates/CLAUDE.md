@@ -2,20 +2,38 @@
 # These rules help new developers learn git best practices.
 # Managed by GitHabits — edit with care. Uninstall with: setup.sh --uninstall
 
-1. Command explanations are handled automatically by the PostToolUse hook
-   based on the EXPLAIN_SCOPE setting in ~/.claude/githabits.conf (or
-   .claude/githabits.conf for project installs). The hook will prompt you
-   to explain commands when appropriate — you don't need to independently
-   decide which commands to explain.
+1. After every Bash tool call, proactively explain the command based on
+   EXPLAIN_SCOPE. To determine the scope, read ~/.claude/githabits.conf
+   (check .claude/githabits.conf first if it exists in the project).
+   Default scope if the file is unreadable: 'git'.
 
-   When the hook prompts you to explain a command, break down each part:
-   the base command, flags, arguments, and pipe operators. Keep it concise
-   but complete. For chained commands (&&, ||, ;), explain each separately.
+   Scope rules:
+   - all:  explain every command, always
+   - git:  explain only commands containing 'git'
+   - dev:  explain git plus common dev tools (npm, pip, docker, curl, etc.)
+   - none: never explain
 
-   The same config file also has a WORKFLOW_NUDGE setting (on or off). When
-   set to 'on', the hook will remind the user about unfinished workflow
-   steps (unpushed commits, missing pull requests, etc.). You don't need to
-   duplicate these reminders — the hook handles them automatically.
+   When explaining a command, use inline markdown to distinguish each part:
+   - Base command and subcommand: **`bold backtick`** — e.g. **`git commit`**
+   - Flags: plain backtick — e.g. `-m`, `--amend`
+   - Arguments and values: italic backtick — e.g. *`'fix bug'`*, *`origin`*
+   - Pipe and chain operators (|, &&, ||, ;): bold — e.g. **`|`**, **`&&`**
+
+   Example — `git commit -m 'fix bug'`:
+   **`git commit`** saves a snapshot of your changes. `-m` sets the commit
+   message inline; *`'fix bug'`* is the message text.
+
+   Example — `git log --oneline | head -5`:
+   **`git log`** lists commits; `--oneline` condenses each to one line.
+   **`|`** pipes the output to **`head`**; `-5` limits it to the first 5.
+
+   For chained commands (&&, ||, ;), explain each sub-command separately in
+   the same paragraph. Keep explanations concise but complete.
+
+   Note: a PostToolUse hook also monitors commands for workflow nudges
+   (unpushed commits, missing PRs, etc.) — those are handled separately
+   and you don't need to duplicate them. The hook's WORKFLOW_NUDGE setting
+   controls this behavior.
 
 2. Before committing, check the current branch with `git branch --show-current`.
    If the branch is 'main' or 'master', stop and ask the user to name a feature

@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # GitHabits — PostToolUse hook
-# Suggests the next step in the git workflow after a command completes.
+# Handles workflow nudges (unpushed commits, missing PRs, etc.) after commands.
 #
-# Output: JSON to stdout with additionalContext field (Claude rephrases).
+# NOTE: The additionalContext field is output to trigger Claude explanations,
+# but Claude Code does not currently inject additionalContext into Claude's
+# context window. Command explanations are handled by Claude directly via
+# CLAUDE.md rule #1 (proactive, scope-based). This hook's EXPLAIN_PREFIX
+# output is kept as a forward-compatibility measure.
+#
+# Output: JSON to stdout with additionalContext field.
 # No stderr — Claude speaks in its own voice, not as a raw notification.
 # Exit 0 always (informational, never blocking).
 
