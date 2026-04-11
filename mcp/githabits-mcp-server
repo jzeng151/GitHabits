@@ -1,0 +1,534 @@
+#!/usr/bin/env python3
+"""GitHabits MCP Server — stdio transport, Python3 stdlib only.
+
+Exposes GitHabits as an MCP server so any MCP-compatible agent can:
+  - Validate git operations before running them
+  - Get workflow suggestions after git milestones
+  - Get command explanations
+
+Protocol: JSON-RPC 2.0 over stdin/stdout (MCP stdio transport).
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+
+# ── Server metadata ──────────────────────────────────────────────────────────
+
+SERVER_NAME = "githabits"
+SERVER_VERSION = "1.0.0"
+PROTOCOL_VERSION = "2024-11-05"
+
+# ── Git helpers ──────────────────────────────────────────────────────────────
+
+def run_git(*args):
+    """Run a git command and return stdout, or empty string on failure."""
+    try:
+        result = subprocess.run(
+            ["git"] + list(args),
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+def current_branch():
+    return run_git("branch", "--show-current")
+
+def is_main_branch(branch):
+    return branch in ("main", "master")
+
+def is_detached_head():
+    return current_branch() == ""
+
+def is_empty_repo():
+    return run_git("rev-parse", "HEAD") == ""
+
+def has_uncommitted_changes():
+    status = run_git("status", "--porcelain")
+    return len(status) > 0
+
+def unpushed_commit_count(branch):
+    if not branch or is_main_branch(branch):
+        return 0
+    log = run_git("log", "@{upstream}..HEAD", "--oneline")
+    if not log:
+        log = run_git("log", "origin/main..HEAD", "--oneline")
+    if not log:
+        log = run_git("log", "origin/master..HEAD", "--oneline")
+    if not log:
+        return 0
+    return len(log.strip().splitlines())
+
+# ── Config reading ───────────────────────────────────────────────────────────
+
+def read_config():
+    """Read githabits.conf from project-local or global location."""
+    config = {
+        "EXPLAIN_SCOPE": "git",
+        "WORKFLOW_NUDGE": "on",
+        "GITHABITS_ALLOW_MAIN": os.environ.get("GITHABITS_ALLOW_MAIN", "0"),
+    }
+    for path in [".claude/githabits.conf", os.path.expanduser("~/.claude/githabits.conf")]:
+        if os.path.isfile(path):
+            try:
+                with open(path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if "=" in line and not line.startswith("#"):
+                            key, val = line.split("=", 1)
+                            config[key.strip()] = val.strip()
+            except OSError:
+                pass
+            break
+    return config
+
+# ── Command splitting ────────────────────────────────────────────────────────
+
+def split_commands(cmd):
+    """Split chained commands on &&, ||, ;"""
+    return [p.strip() for p in re.split(r"&&|\|\||;", cmd) if p.strip()]
+
+# ── Tool: validate_git_operation ─────────────────────────────────────────────
+
+def validate_git_operation(command):
+    """Check if a git command is safe. Returns validation result."""
+    config = read_config()
+    if config.get("GITHABITS_ALLOW_MAIN") == "1":
+        return {"allowed": True}
+
+    subcmds = split_commands(command)
+    branch = current_branch()
+
+    for subcmd in subcmds:
+        # Fast path: skip non-git commands
+        if not re.search(r"(^|\s)git\s", subcmd):
+            continue
+
+        # ── Destructive: git reset --hard
+        if re.search(r"^\s*git\s+reset\s.*--hard", subcmd):
+            return {
+                "allowed": False,
+                "severity": "block",
+                "reason": "git reset --hard permanently deletes all uncommitted changes. There is no undo.",
+                "suggestion": "Use 'git stash' to save changes temporarily, or 'git reset --soft HEAD~1' to undo the last commit while keeping changes.",
+            }
+
+        # ── Destructive: git clean -f (without -n dry run)
+        if re.search(r"^\s*git\s+clean\s", subcmd):
+            if re.search(r"\s-[a-zA-Z]*f", subcmd) and not re.search(r"\s-[a-zA-Z]*n", subcmd):
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": "git clean -f permanently deletes all untracked files. There is no undo.",
+                    "suggestion": "Run 'git clean -n' first to see what would be deleted (dry run).",
+                }
+
+        # ── Destructive: git checkout -- <path>
+        if re.search(r"^\s*git\s+checkout\s+--\s", subcmd):
+            return {
+                "allowed": False,
+                "severity": "block",
+                "reason": "git checkout -- <path> permanently discards uncommitted changes to those files.",
+                "suggestion": "Use 'git stash' to save changes, or 'git diff <path>' to review what you'd lose.",
+            }
+
+        # ── Destructive: git restore (without --staged)
+        if re.search(r"^\s*git\s+restore\s", subcmd) and not re.search(r"--staged", subcmd):
+            return {
+                "allowed": False,
+                "severity": "block",
+                "reason": "git restore <path> permanently discards uncommitted changes to those files.",
+                "suggestion": "Use 'git stash' to save changes, or 'git restore --staged <path>' to just unstage.",
+            }
+
+        # ── Detached HEAD
+        if not branch:
+            if re.search(r"(^|\s)git\s+(commit|merge|push)", subcmd):
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": "You're in detached HEAD state. Changes made here won't be saved to any branch and could be lost.",
+                    "suggestion": "Run 'git checkout main' to go back, or 'git checkout -b feature/name' to create a branch from this point.",
+                }
+            continue
+
+        # ── Commit on main/master
+        if re.search(r"^\s*git\s+commit", subcmd):
+            if is_main_branch(branch) and not is_empty_repo():
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": f"You're about to commit directly to '{branch}'. This branch should stay stable — use a feature branch instead.",
+                    "suggestion": f"Run 'git checkout -b feature/your-feature-name' first, then commit on the new branch.",
+                }
+
+        # ── Cherry-pick on main
+        if re.search(r"^\s*git\s+cherry-pick", subcmd):
+            if is_main_branch(branch):
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": f"You're about to cherry-pick directly onto '{branch}'. Use a feature branch instead.",
+                    "suggestion": "Create a feature branch first, cherry-pick there, then open a PR.",
+                }
+
+        # ── Revert on main
+        if re.search(r"^\s*git\s+revert", subcmd):
+            if is_main_branch(branch):
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": f"You're about to revert directly on '{branch}'. Even reverts should go through a PR.",
+                    "suggestion": "Create a branch like 'fix/revert-description', revert there, then open a PR.",
+                }
+
+        # ── Merge into main
+        if re.search(r"^\s*git\s+merge", subcmd):
+            if is_main_branch(branch):
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": f"You're about to merge directly into '{branch}'. Use a pull request on GitHub instead.",
+                    "suggestion": "Push your feature branch and create a pull request on GitHub.",
+                }
+
+        # ── Push checks
+        if re.search(r"^\s*git\s+push", subcmd):
+            # Delete remote main
+            if re.search(r"(--delete\s+(main|master)|\s:(main|master))(\s|$)", subcmd):
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": "You're about to DELETE the main branch from the remote. This is almost certainly not what you want.",
+                    "suggestion": "If cleaning up after a feature, delete the feature branch instead: git push origin --delete feature/name",
+                }
+
+            # Push --all / --mirror
+            if re.search(r"\s--(all|mirror)(\s|$)", subcmd):
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": "git push --all/--mirror sends ALL branches to the remote, including main. Push only your feature branch.",
+                    "suggestion": f"Use 'git push origin {branch}' to push just your current branch.",
+                }
+
+            # Force push detection
+            is_force = bool(re.search(r"\s(-f|--force|--force-with-lease)(\s|$)", subcmd))
+
+            # Determine push target
+            target = None
+            m = re.search(r"\s(main|master)(\s|$)", subcmd)
+            if m:
+                target = m.group(1)
+            if not target:
+                m = re.search(r"\s\+?\S+:(refs/heads/)?(main|master)(\s|$)", subcmd)
+                if m:
+                    target = m.group(2)
+            if not target and is_main_branch(branch):
+                if re.search(r"\sHEAD(\s|$)", subcmd):
+                    target = branch
+            if not target and is_main_branch(branch):
+                if re.search(r"(^|\s)git\s+push(\s+(origin|upstream))?\s*$", subcmd):
+                    target = branch
+
+            if target and is_main_branch(target):
+                if is_force:
+                    return {
+                        "allowed": False,
+                        "severity": "block",
+                        "reason": f"Force pushing to '{target}' overwrites the remote history. Anyone else's changes will be permanently deleted.",
+                        "suggestion": "Never force push to main. Push to a feature branch and create a PR.",
+                    }
+                return {
+                    "allowed": False,
+                    "severity": "block",
+                    "reason": f"You're about to push directly to '{target}'. Use a feature branch and pull request instead.",
+                    "suggestion": f"Create a feature branch, push it, and open a PR on GitHub.",
+                }
+
+            # Force push to feature branch — warn but allow
+            if is_force and target and not is_main_branch(target):
+                return {
+                    "allowed": True,
+                    "severity": "warn",
+                    "reason": f"Force pushing to '{target}'. This overwrites the remote version of this branch. Safe if you're the only one working on it.",
+                    "suggestion": "Prefer --force-with-lease over --force for safety.",
+                }
+
+    return {"allowed": True}
+
+# ── Tool: suggest_next_step ──────────────────────────────────────────────────
+
+SUGGESTIONS = {
+    "new-branch": {
+        "hint": "You're on your new branch. Make your changes, then commit when you're ready.",
+        "next_command": "git add . && git commit -m 'describe your changes'",
+    },
+    "commit": {
+        "hint": "Your changes are saved locally. Push to GitHub so others can see them.",
+        # next_command set dynamically based on branch
+    },
+    "push": {
+        "hint": "Your branch is on GitHub. Open a pull request so your changes can be reviewed before merging into main.",
+    },
+    "delete-branch": {
+        "hint": "Branch cleaned up. Pull the latest main, then start your next feature.",
+        "next_command": "git checkout main && git pull",
+    },
+    "pull": {
+        "hint": "You're up to date on main. Create a feature branch for your next task.",
+        "next_command": "git checkout -b feature/your-feature-name",
+    },
+}
+
+def suggest_next_step(event, branch=None):
+    """Suggest the next workflow step based on a git milestone event."""
+    if branch is None:
+        branch = current_branch()
+
+    if event not in SUGGESTIONS:
+        return {"hint": "", "next_command": ""}
+
+    result = dict(SUGGESTIONS[event])
+
+    # Dynamic next_command for commit/push
+    if event == "commit" and branch and not is_main_branch(branch):
+        result["next_command"] = f"git push origin {branch}"
+    elif event == "push" and branch and not is_main_branch(branch):
+        result["next_command"] = f"# Open a pull request on GitHub for branch '{branch}'"
+
+    return result
+
+# ── Tool: explain_command ────────────────────────────────────────────────────
+
+def explain_command(command):
+    """Return a prompt that asks the agent to explain a command."""
+    parts = split_commands(command)
+    if len(parts) > 1:
+        detail = "This is a chained command. Explain each part separately: " + ", ".join(f"'{p}'" for p in parts)
+    else:
+        detail = f"Explain what '{command}' does."
+    return {
+        "explanation": f"{detail} Break down the base command, flags, and arguments in plain English. Keep it concise but complete."
+    }
+
+# ── MCP Tool schemas ────────────────────────────────────────────────────────
+
+TOOLS = [
+    {
+        "name": "validate_git_operation",
+        "description": "Check if a git command is safe before running it. Returns whether the operation is allowed, and if not, explains why and suggests a safer alternative. Call this BEFORE executing any git command.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The git command to validate (e.g. 'git commit -m fix' or 'git push origin main')",
+                }
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "suggest_next_step",
+        "description": "Get a workflow suggestion after a git milestone. Call this AFTER a git operation completes to guide the user to the next step in the branch-commit-push-PR workflow.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "event": {
+                    "type": "string",
+                    "description": "The git milestone that just happened",
+                    "enum": ["new-branch", "commit", "push", "delete-branch", "pull"],
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "The current branch name (optional, auto-detected if omitted)",
+                },
+            },
+            "required": ["event"],
+        },
+    },
+    {
+        "name": "explain_command",
+        "description": "Get a plain-English explanation prompt for a command. Returns text you can use to explain the command to the user.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The command to explain",
+                }
+            },
+            "required": ["command"],
+        },
+    },
+]
+
+# ── MCP Resources ────────────────────────────────────────────────────────────
+
+RESOURCES = [
+    {
+        "uri": "githabits://status",
+        "name": "Git Status",
+        "description": "Current git state: branch, uncommitted changes, unpushed commits",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "githabits://config",
+        "name": "GitHabits Config",
+        "description": "Current GitHabits configuration settings",
+        "mimeType": "application/json",
+    },
+]
+
+def read_resource(uri):
+    if uri == "githabits://status":
+        branch = current_branch()
+        return json.dumps({
+            "branch": branch or "(detached HEAD)",
+            "is_main": is_main_branch(branch) if branch else False,
+            "is_detached": not bool(branch),
+            "has_uncommitted_changes": has_uncommitted_changes(),
+            "unpushed_commits": unpushed_commit_count(branch) if branch else 0,
+        })
+    elif uri == "githabits://config":
+        return json.dumps(read_config())
+    return ""
+
+# ── JSON-RPC / MCP protocol ─────────────────────────────────────────────────
+
+def make_response(id, result):
+    return {"jsonrpc": "2.0", "id": id, "result": result}
+
+def make_error(id, code, message):
+    return {"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}
+
+def handle_initialize(id, params):
+    return make_response(id, {
+        "protocolVersion": PROTOCOL_VERSION,
+        "capabilities": {
+            "tools": {},
+            "resources": {},
+        },
+        "serverInfo": {
+            "name": SERVER_NAME,
+            "version": SERVER_VERSION,
+        },
+    })
+
+def handle_tools_list(id, params):
+    return make_response(id, {"tools": TOOLS})
+
+def handle_tools_call(id, params):
+    name = params.get("name", "")
+    args = params.get("arguments", {})
+
+    if name == "validate_git_operation":
+        command = args.get("command", "")
+        if not command:
+            return make_error(id, -32602, "Missing required argument: command")
+        result = validate_git_operation(command)
+        return make_response(id, {
+            "content": [{"type": "text", "text": json.dumps(result)}],
+        })
+
+    elif name == "suggest_next_step":
+        event = args.get("event", "")
+        branch = args.get("branch")
+        if not event:
+            return make_error(id, -32602, "Missing required argument: event")
+        result = suggest_next_step(event, branch)
+        return make_response(id, {
+            "content": [{"type": "text", "text": json.dumps(result)}],
+        })
+
+    elif name == "explain_command":
+        command = args.get("command", "")
+        if not command:
+            return make_error(id, -32602, "Missing required argument: command")
+        result = explain_command(command)
+        return make_response(id, {
+            "content": [{"type": "text", "text": json.dumps(result)}],
+        })
+
+    else:
+        return make_error(id, -32601, f"Unknown tool: {name}")
+
+def handle_resources_list(id, params):
+    return make_response(id, {"resources": RESOURCES})
+
+def handle_resources_read(id, params):
+    uri = params.get("uri", "")
+    if uri not in ("githabits://status", "githabits://config"):
+        return make_error(id, -32602, f"Unknown resource: {uri}")
+    content = read_resource(uri)
+    return make_response(id, {
+        "contents": [{
+            "uri": uri,
+            "mimeType": "application/json",
+            "text": content,
+        }],
+    })
+
+# ── Method dispatch ──────────────────────────────────────────────────────────
+
+HANDLERS = {
+    "initialize": handle_initialize,
+    "tools/list": handle_tools_list,
+    "tools/call": handle_tools_call,
+    "resources/list": handle_resources_list,
+    "resources/read": handle_resources_read,
+}
+
+# Notifications (no response expected)
+NOTIFICATIONS = {"notifications/initialized", "notifications/cancelled"}
+
+def handle_message(msg):
+    """Process a single JSON-RPC message. Returns a response dict, or None for notifications."""
+    method = msg.get("method", "")
+    id = msg.get("id")
+    params = msg.get("params", {})
+
+    # Notifications have no id and expect no response
+    if method in NOTIFICATIONS:
+        return None
+
+    if id is None:
+        # Unknown notification — ignore
+        return None
+
+    handler = HANDLERS.get(method)
+    if handler:
+        return handler(id, params)
+
+    return make_error(id, -32601, f"Method not found: {method}")
+
+# ── Main loop ────────────────────────────────────────────────────────────────
+
+def main():
+    log = lambda msg: print(f"[githabits-mcp] {msg}", file=sys.stderr)
+    log(f"Server starting (v{SERVER_VERSION})")
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError as e:
+            response = make_error(None, -32700, f"Parse error: {e}")
+            print(json.dumps(response), flush=True)
+            continue
+
+        response = handle_message(msg)
+        if response is not None:
+            print(json.dumps(response), flush=True)
+
+    log("Server shutting down")
+
+if __name__ == "__main__":
+    main()

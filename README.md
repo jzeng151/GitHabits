@@ -105,6 +105,13 @@ Install pedagogy rules for your AI agent:
 ```bash
 git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
 bash /tmp/githabits/setup.sh --agents --git-hooks
+### Option E — MCP Server (richest agent integration)
+
+Install an MCP server that any MCP-compatible agent can use:
+
+```bash
+git clone https://github.com/jzeng151/GitHabits.git /tmp/githabits
+bash /tmp/githabits/setup.sh --mcp --git-hooks
 rm -rf /tmp/githabits
 ```
 
@@ -116,6 +123,19 @@ This installs:
 - **Native git hooks** via `--git-hooks` for hard blocking
 
 The rules teach your AI agent to explain git commands, check the branch before committing, and suggest the next workflow step. Git hooks provide the hard safety net that blocks commits and pushes to main regardless of which agent you use.
+- **MCP server** at `~/.githabits/mcp/githabits-mcp-server` (Python3, no external dependencies)
+- **Native git hooks** via `--git-hooks` for hard blocking
+- Auto-registers with Claude Code, Cursor (if `.cursor/` exists), and Windsurf (if detected)
+
+The MCP server exposes three tools:
+- `validate_git_operation` — check if a git command is safe before running it
+- `suggest_next_step` — get workflow guidance after a git milestone
+- `explain_command` — get a plain-English explanation of a command
+
+For agents not auto-detected (OpenCode, Codex, Goose), add to their MCP config:
+- Server name: `githabits`
+- Command: `python3`
+- Args: `~/.githabits/mcp/githabits-mcp-server`
 
 ---
 
@@ -136,6 +156,11 @@ The rules teach your AI agent to explain git commands, check the branch before c
 - `~/.githabits/template/hooks/post-checkout` — suggests next step after branch switch
 - `~/.githabits/template/hooks/post-merge` — suggests next feature after pull
 - `~/.githabits/lib/githabits.sh` — shared logic library
+
+### MCP server install (`--mcp`)
+
+- `~/.githabits/mcp/githabits-mcp-server` — MCP server (Python3, stdlib only)
+- Agent MCP configs updated (Claude Code `settings.json`, Cursor `mcp.json`, Windsurf `mcp_config.json`)
 
 After install with `--git-hooks`, any git client will:
 

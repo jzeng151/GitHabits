@@ -6,6 +6,7 @@
 #   ./setup.sh             # global install (~/.claude/)
 #   ./setup.sh --project   # per-project install (.claude/)
 #   ./setup.sh --git-hooks # install native git hooks (works without Claude Code)
+#   ./setup.sh --mcp       # install MCP server for non-Claude-Code agents
 #   ./setup.sh --uninstall # remove all GitHabits files
 
 set -euo pipefail
@@ -64,6 +65,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOK_SRC="$SCRIPT_DIR/hooks/pre_tool_use.sh"
 POST_HOOK_SRC="$SCRIPT_DIR/hooks/post_tool_use.sh"
 GIT_HOOKS_SRC="$SCRIPT_DIR/hooks/git-hooks"
+MCP_SERVER_SRC="$SCRIPT_DIR/mcp/githabits-mcp-server"
 LIB_SRC="$SCRIPT_DIR/lib/githabits.sh"
 CLAUDE_MD_SRC="$SCRIPT_DIR/templates/CLAUDE.md"
 AGENTS_MD_SRC="$SCRIPT_DIR/templates/AGENTS.md"
@@ -91,6 +93,7 @@ MODE="global"
 UNINSTALL=false
 GIT_HOOKS=false
 AGENTS=false
+MCP=false
 EXPLAIN_SCOPE=""
 WORKFLOW_NUDGE=""
 
@@ -99,6 +102,7 @@ for arg in "$@"; do
     --project)    MODE="project" ;;
     --git-hooks)  GIT_HOOKS=true ;;
     --agents)     AGENTS=true ;;
+    --mcp)        MCP=true ;;
     --uninstall)  UNINSTALL=true ;;
     --explain-scope=*)
       EXPLAIN_SCOPE="${arg#*=}"
@@ -108,17 +112,21 @@ for arg in "$@"; do
       ;;
     --help|-h)
       echo "Usage: ./setup.sh [--project] [--git-hooks] [--agents] [--uninstall]"
+      echo "Usage: ./setup.sh [--project] [--git-hooks] [--mcp] [--uninstall]"
       echo "                  [--explain-scope=SCOPE] [--workflow-nudge=on|off]"
       echo ""
       echo "  (no flag)                Install globally in ~/.claude/ (Claude Code only)"
       echo "  --project                Install in .claude/ (this project only, Claude Code)"
       echo "  --git-hooks              Install native git hooks (works without Claude Code)"
       echo "  --agents                 Install rules for detected AI agents (OpenCode, Codex, etc.)"
+      echo "  --mcp                    Install MCP server for non-Claude-Code agents"
       echo "  --uninstall              Remove all GitHabits files and config"
       echo "  --explain-scope=SCOPE    Set explanation scope: all, git, dev, none"
       echo "  --workflow-nudge=on|off  Toggle workflow reminders"
       echo ""
       echo "  Combine flags: ./setup.sh --git-hooks --agents"
+      echo "  Combine flags: ./setup.sh --git-hooks --mcp installs both."
+      echo "  Without flags, only Claude Code hooks are installed."
       exit 0
       ;;
     *) error "Unknown argument: $arg"; exit 1 ;;
@@ -154,7 +162,7 @@ update_config() {
 
 # ── Standalone config mode ───────────────────────────────────────────────────
 # Allow changing settings without a full reinstall (unless also doing --git-hooks install).
-if [ "$UNINSTALL" = false ] && [ "$GIT_HOOKS" = false ] && [ "$AGENTS" = false ] && { [ -n "$EXPLAIN_SCOPE" ] || [ -n "$WORKFLOW_NUDGE" ]; }; then
+if [ "$UNINSTALL" = false ] && [ "$GIT_HOOKS" = false ] && [ "$MCP" = false ] && { [ -n "$EXPLAIN_SCOPE" ] || [ -n "$WORKFLOW_NUDGE" ]; }; then
   STANDALONE=true
 
   if [ -n "$EXPLAIN_SCOPE" ]; then
@@ -259,6 +267,32 @@ with open(path, "w") as f:
     f.writelines(out)
 PYEOF
     success "Removed GitHabits block from: $CLAUDE_MD_FILE"
+  fi
+
+  # Remove MCP server
+  MCP_DIR="$GITHABITS_DIR/mcp"
+  if [ -d "$MCP_DIR" ]; then
+    rm -rf "$MCP_DIR"
+    success "Removed MCP server: $MCP_DIR"
+  fi
+
+  # Remove MCP registration from Claude Code settings
+  if [ -f "$SETTINGS_FILE" ]; then
+    if python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    cfg = json.load(f)
+if 'githabits' in cfg.get('mcpServers', {}):
+    del cfg['mcpServers']['githabits']
+    if not cfg['mcpServers']:
+        del cfg['mcpServers']
+    with open(sys.argv[1], 'w') as f:
+        json.dump(cfg, f, indent=2)
+        f.write('\n')
+    print('removed')
+" "$SETTINGS_FILE" 2>/dev/null | grep -q "removed"; then
+      success "Removed MCP server from: $SETTINGS_FILE"
+    fi
   fi
 
   # Remove native git hooks (template directory)
@@ -604,6 +638,116 @@ if [ "$AGENTS" = true ]; then
     echo ""
     echo "  Rules installed for:$AGENTS_INSTALLED"
   fi
+# ── MCP server (optional) ──────────────────────────────────────────────────
+if [ "$MCP" = true ]; then
+  echo ""
+  info "Installing MCP server..."
+
+  MCP_DIR="$GITHABITS_DIR/mcp"
+  mkdir -p "$MCP_DIR"
+
+  cp "$MCP_SERVER_SRC" "$MCP_DIR/githabits-mcp-server"
+  chmod +x "$MCP_DIR/githabits-mcp-server"
+  success "MCP server installed: $MCP_DIR/githabits-mcp-server"
+
+  MCP_CMD="python3 $MCP_DIR/githabits-mcp-server"
+
+  # Register with Claude Code if available
+  if [ -f "$SETTINGS_FILE" ] || command -v claude >/dev/null 2>&1; then
+    RESULT=$(python3 - "$SETTINGS_FILE" "$MCP_DIR/githabits-mcp-server" <<'PYEOF'
+import json, sys, os
+path, server_path = sys.argv[1], sys.argv[2]
+if os.path.exists(path):
+    with open(path) as f:
+        cfg = json.load(f)
+else:
+    cfg = {}
+servers = cfg.setdefault("mcpServers", {})
+if "githabits" in servers:
+    print("already_registered")
+else:
+    servers["githabits"] = {
+        "command": "python3",
+        "args": [server_path],
+    }
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+    print("registered")
+PYEOF
+    )
+    if [ "$RESULT" = "already_registered" ]; then
+      warn "MCP server already registered in Claude Code (skipped)"
+    else
+      success "Registered MCP server in: $SETTINGS_FILE"
+    fi
+  fi
+
+  # Detect and register with other agents
+  echo ""
+  echo "  MCP server command: $MCP_CMD"
+  echo ""
+  echo "  To register with other agents, add to their MCP config:"
+  echo ""
+
+  # Cursor
+  if [ -d ".cursor" ]; then
+    CURSOR_MCP=".cursor/mcp.json"
+    if [ ! -f "$CURSOR_MCP" ]; then
+      echo '{}' > "$CURSOR_MCP"
+    fi
+    python3 - "$CURSOR_MCP" "$MCP_DIR/githabits-mcp-server" <<'PYEOF'
+import json, sys, os
+path, server_path = sys.argv[1], sys.argv[2]
+if os.path.exists(path):
+    with open(path) as f:
+        cfg = json.load(f)
+else:
+    cfg = {}
+servers = cfg.setdefault("mcpServers", {})
+if "githabits" not in servers:
+    servers["githabits"] = {
+        "command": "python3",
+        "args": [server_path],
+    }
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+PYEOF
+    success "Registered MCP server in: $CURSOR_MCP"
+  fi
+
+  # Windsurf
+  WINDSURF_MCP="$HOME/.codeium/windsurf/mcp_config.json"
+  if [ -d "$HOME/.codeium/windsurf" ]; then
+    if [ ! -f "$WINDSURF_MCP" ]; then
+      echo '{}' > "$WINDSURF_MCP"
+    fi
+    python3 - "$WINDSURF_MCP" "$MCP_DIR/githabits-mcp-server" <<'PYEOF'
+import json, sys, os
+path, server_path = sys.argv[1], sys.argv[2]
+if os.path.exists(path):
+    with open(path) as f:
+        cfg = json.load(f)
+else:
+    cfg = {}
+servers = cfg.setdefault("mcpServers", {})
+if "githabits" not in servers:
+    servers["githabits"] = {
+        "command": "python3",
+        "args": [server_path],
+    }
+    with open(path, "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+PYEOF
+    success "Registered MCP server in: $WINDSURF_MCP"
+  fi
+
+  echo "  For other agents (OpenCode, Codex, Goose), add this to their MCP config:"
+  echo "    Server name: githabits"
+  echo "    Command: python3"
+  echo "    Args: $MCP_DIR/githabits-mcp-server"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
@@ -618,6 +762,10 @@ if [ "$GIT_HOOKS" = true ]; then
   echo "  • After each git milestone, you'll see next-step hints in your terminal"
 fi
 if [ "$INSTALL_CLAUDE_HOOKS" = true ] && [ -f "$HOOK_DEST" ]; then
+if [ "$MCP" = true ]; then
+  echo "  • MCP server provides tools for any MCP-compatible agent"
+fi
+if [ -f "$HOOK_DEST" ]; then
   echo "  • Claude explains commands before running them (scope: $EXPLAIN_SCOPE)"
   echo "  • After each git milestone, Claude suggests the next step in the workflow"
   echo "  • Workflow nudges remind you about unfinished steps (nudge: $WORKFLOW_NUDGE)"
